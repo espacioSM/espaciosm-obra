@@ -1,0 +1,295 @@
+import { supabase } from '../lib/supabase'
+import { hoyISO, horaActual } from '../lib/formato'
+import type {
+  Asistencia,
+  DirectorioEmpleado,
+  Empleado,
+  EstadoProyecto,
+  Perfil,
+  PeriodoPago,
+  Proyecto,
+  ProyectoMiembro,
+  Rol,
+} from '../lib/tipos'
+
+// -----------------------------------------------------------------------------
+// Entradas de formulario
+// -----------------------------------------------------------------------------
+
+export type DatosProyecto = {
+  nombre: string
+  ubicacion: string | null
+  fecha_inicio: string
+  fecha_fin: string | null
+  estado: EstadoProyecto
+}
+
+export type DatosEmpleado = {
+  proyecto_id: string
+  nombre: string
+  puesto: string | null
+  sueldo: number
+  periodo_pago: PeriodoPago
+  fecha_ingreso: string
+}
+
+export type ResumenObra = {
+  proyectos: Proyecto[]
+  empleadosActivos: number
+  asistenciasHoy: number
+  sinSalida: number
+  personalPorProyecto: Record<string, number>
+}
+
+// -----------------------------------------------------------------------------
+// Proyectos
+// -----------------------------------------------------------------------------
+
+export async function listarProyectos(): Promise<Proyecto[]> {
+  const { data, error } = await supabase
+    .from('proyectos')
+    .select('*')
+    .order('fecha_inicio', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearProyecto(datos: DatosProyecto): Promise<void> {
+  const { error } = await supabase.from('proyectos').insert(datos)
+  if (error) throw error
+}
+
+export async function actualizarProyecto(
+  id: string,
+  datos: Partial<DatosProyecto>,
+): Promise<void> {
+  const { error } = await supabase.from('proyectos').update(datos).eq('id', id)
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Equipo de cada proyecto
+// -----------------------------------------------------------------------------
+
+export async function listarMiembros(): Promise<ProyectoMiembro[]> {
+  const { data, error } = await supabase.from('proyecto_miembros').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function agregarMiembro(proyectoId: string, usuarioId: string): Promise<void> {
+  const { error } = await supabase
+    .from('proyecto_miembros')
+    .insert({ proyecto_id: proyectoId, usuario_id: usuarioId })
+  if (error) throw error
+}
+
+export async function quitarMiembro(proyectoId: string, usuarioId: string): Promise<void> {
+  const { error } = await supabase
+    .from('proyecto_miembros')
+    .delete()
+    .eq('proyecto_id', proyectoId)
+    .eq('usuario_id', usuarioId)
+  if (error) throw error
+}
+
+export async function listarPerfiles(): Promise<Perfil[]> {
+  const { data, error } = await supabase
+    .from('perfiles')
+    .select('*')
+    .order('nombre', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function actualizarPerfil(
+  id: string,
+  cambios: { rol?: Rol; activo?: boolean },
+): Promise<void> {
+  const { error } = await supabase.from('perfiles').update(cambios).eq('id', id)
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Empleados
+// -----------------------------------------------------------------------------
+
+export async function listarEmpleados(): Promise<Empleado[]> {
+  const { data, error } = await supabase
+    .from('empleados')
+    .select('*')
+    .order('nombre', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+/**
+ * Directorio de una obra sin sueldos. Es la vía que usa el residente para
+ * pasar lista; la tabla empleados queda reservada a administración y permiso
+ * medio.
+ */
+export async function listarDirectorio(proyectoId: string): Promise<DirectorioEmpleado[]> {
+  const { data, error } = await supabase.rpc('empleados_de_proyecto', {
+    p_proyecto_id: proyectoId,
+  })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function contarPersonalPorProyecto(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc('conteo_personal_por_proyecto')
+  if (error) throw error
+
+  const conteo: Record<string, number> = {}
+  for (const fila of data ?? []) {
+    conteo[fila.proyecto_id] = fila.activos
+  }
+  return conteo
+}
+
+export async function crearEmpleado(datos: DatosEmpleado): Promise<void> {
+  const { error } = await supabase.from('empleados').insert(datos)
+  if (error) throw error
+}
+
+export async function actualizarEmpleado(
+  id: string,
+  datos: Partial<DatosEmpleado> & { activo?: boolean; fecha_baja?: string | null },
+): Promise<void> {
+  const { error } = await supabase.from('empleados').update(datos).eq('id', id)
+  if (error) throw error
+}
+
+export async function darDeBajaEmpleado(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('empleados')
+    .update({ activo: false, fecha_baja: hoyISO() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function reactivarEmpleado(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('empleados')
+    .update({ activo: true, fecha_baja: null })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Asistencia
+// -----------------------------------------------------------------------------
+
+export async function listarAsistencia(
+  proyectoId: string,
+  fecha: string,
+): Promise<Asistencia[]> {
+  const { data, error } = await supabase
+    .from('asistencia')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .eq('fecha', fecha)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function registrarEntrada(
+  empleadoId: string,
+  proyectoId: string,
+  fecha: string,
+  usuarioId: string,
+): Promise<void> {
+  const { error } = await supabase.from('asistencia').insert({
+    empleado_id: empleadoId,
+    proyecto_id: proyectoId,
+    fecha,
+    hora_entrada: horaActual(),
+    registrado_por: usuarioId,
+  })
+  if (error) throw error
+}
+
+export async function registrarSalida(
+  asistenciaId: string,
+  usuarioId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('asistencia')
+    .update({ hora_salida: horaActual(), registrado_por: usuarioId })
+    .eq('id', asistenciaId)
+    // Solo cierra una jornada abierta: evita que un segundo toque o otro
+    // dispositivo sobrescriba la salida ya registrada.
+    .is('hora_salida', null)
+    .select('id')
+
+  if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('SALIDA_YA_REGISTRADA')
+  }
+}
+
+export type JornadaManual = {
+  empleadoId: string
+  proyectoId: string
+  fecha: string
+  horaEntrada: string
+  horaSalida: string | null
+  usuarioId: string
+}
+
+/**
+ * Captura o corrige una jornada completa. Es la vía de la oficina para los
+ * días anteriores: permite fijar entrada y salida, no solo la hora actual.
+ */
+export async function guardarJornada(datos: JornadaManual): Promise<void> {
+  const { error } = await supabase.from('asistencia').upsert(
+    {
+      empleado_id: datos.empleadoId,
+      proyecto_id: datos.proyectoId,
+      fecha: datos.fecha,
+      hora_entrada: datos.horaEntrada,
+      hora_salida: datos.horaSalida,
+      registrado_por: datos.usuarioId,
+    },
+    { onConflict: 'empleado_id,fecha' },
+  )
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Resumen
+// -----------------------------------------------------------------------------
+
+export async function cargarResumen(): Promise<ResumenObra> {
+  const [proyectos, asistencia, conteo] = await Promise.all([
+    supabase.from('proyectos').select('*').order('fecha_inicio', { ascending: false }),
+    supabase.from('asistencia').select('*').eq('fecha', hoyISO()),
+    supabase.rpc('conteo_personal_por_proyecto'),
+  ])
+
+  if (proyectos.error) throw proyectos.error
+  if (asistencia.error) throw asistencia.error
+  if (conteo.error) throw conteo.error
+
+  const listaProyectos = proyectos.data ?? []
+  const listaAsistencia = asistencia.data ?? []
+
+  const personalPorProyecto: Record<string, number> = {}
+  for (const fila of conteo.data ?? []) {
+    personalPorProyecto[fila.proyecto_id] = fila.activos
+  }
+
+  const empleadosActivos = Object.values(personalPorProyecto).reduce(
+    (total, cantidad) => total + cantidad,
+    0,
+  )
+
+  return {
+    proyectos: listaProyectos,
+    empleadosActivos,
+    asistenciasHoy: listaAsistencia.length,
+    sinSalida: listaAsistencia.filter((registro) => !registro.hora_salida).length,
+    personalPorProyecto,
+  }
+}
