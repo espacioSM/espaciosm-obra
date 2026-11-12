@@ -216,10 +216,17 @@ try {
 
   await db.exec(`
     insert into public.asistencia (empleado_id, proyecto_id, fecha, hora_entrada, hora_salida, registrado_por)
-    values ('${E1}', '${P1}', current_date - 1, '07:00', '17:00', '${MED}');
+    values (
+      '${E1}',
+      '${P1}',
+      (now() at time zone 'America/Mexico_City')::date - 1,
+      '07:00',
+      '17:00',
+      '${MED}'
+    );
   `)
   const ayer = await db.query(
-    "select fecha::text, registrado_por from public.asistencia where empleado_id = $1 and fecha = current_date - 1",
+    "select fecha::text, registrado_por from public.asistencia where empleado_id = $1 and fecha = (now() at time zone 'America/Mexico_City')::date - 1",
     [E1],
   )
   if (ayer.rows[0]?.fecha && ayer.rows[0]?.registrado_por === MED) {

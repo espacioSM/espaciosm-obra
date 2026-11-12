@@ -1,0 +1,1369 @@
+-- =============================================================================
+-- espacioSM Obra · Instalación completa para un proyecto nuevo
+-- Archivo: supabase/instalacion_completa.sql
+--
+-- Ejecutar UNA sola vez en un proyecto Supabase vacío. Incluye 0001 a 0005.
+-- Después de ejecutarlo, crea la cuenta admin en Authentication y promuévela
+-- con el bloque de promoción que está al final de este archivo.
+-- =============================================================================
+
+-- ############################################################################
+-- INICIO 0001_esquema_sprint1.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Sprint 1 · Esquema base
+-- Archivo: supabase/migrations/0001_esquema_sprint1.sql
+--
+-- Ejecutar en Supabase: Dashboard > SQL Editor > New query > pegar > Run.
+-- Orden obligatorio: 0001, 0002, 0003.
+--
+-- Alcance: perfiles (roles), proyectos, miembros de proyecto, empleados,
+-- asistencia y matriz de permisos por rol/módulo/acción.
+-- =============================================================================
+
+create extension if not exists "pgcrypto";
+
+-- -----------------------------------------------------------------------------
+-- 1. Tipos
+-- -----------------------------------------------------------------------------
+
+create type public.rol_usuario as enum ('admin', 'permiso_medio', 'residente');
+
+create type public.estado_proyecto as enum (
+  'planeado',
+  'en_ejecucion',
+  'pausado',
+  'terminado'
+);
+
+create type public.periodo_pago as enum (
+  'mensual',
+  'quincenal',
+  'semanal',
+  'diario',
+  'por_hora'
+);
+
+create type public.modulo_sistema as enum (
+  'proyectos',
+  'personal',
+  'asistencia',
+  'materiales',
+  'generadores',
+  'estimaciones',
+  'solicitudes',
+  'pagos',
+  'bitacora',
+  'reportes'
+);
+
+create type public.accion_sistema as enum (
+  'ver',
+  'crear',
+  'editar',
+  'aprobar',
+  'eliminar'
+);
+
+-- -----------------------------------------------------------------------------
+-- 2. Utilidades
+-- -----------------------------------------------------------------------------
+
+-- Sella la fecha de modificación en cada UPDATE.
+create function public.marcar_actualizado()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.actualizado_en := now();
+  return new;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 3. Perfiles (espejo de auth.users)
+--
+-- Supabase Auth guarda correo y contraseña. Aquí solo viven los datos de
+-- negocio: nombre, rol y si la cuenta está habilitada.
+-- -----------------------------------------------------------------------------
+
+create table public.perfiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  email text not null,
+  nombre text,
+  rol public.rol_usuario not null default 'residente',
+  activo boolean not null default true,
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now()
+);
+
+comment on table public.perfiles is
+  'Datos de negocio de cada usuario. El alta la crea un trigger desde auth.users.';
+comment on column public.perfiles.rol is
+  'admin = control total; permiso_medio = operación según matriz; residente = captura en campo.';
+
+create trigger perfiles_actualizado
+before update on public.perfiles
+for each row execute function public.marcar_actualizado();
+
+-- Alta automática del perfil cuando se crea un usuario en Supabase Auth.
+-- El rol inicial siempre es residente; un admin lo cambia después desde la app.
+create function public.crear_perfil_nuevo_usuario()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  insert into public.perfiles (id, email, nombre)
+  values (
+    new.id,
+    new.email,
+    coalesce(
+      nullif(new.raw_user_meta_data ->> 'nombre', ''),
+      split_part(new.email, '@', 1)
+    )
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.crear_perfil_nuevo_usuario();
+
+-- Mantiene el correo sincronizado si se cambia desde Supabase Auth.
+create function public.sincronizar_email_usuario()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.perfiles set email = new.email where id = new.id;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_email_updated
+after update of email on auth.users
+for each row execute function public.sincronizar_email_usuario();
+
+-- -----------------------------------------------------------------------------
+-- 4. Proyectos y su equipo
+-- -----------------------------------------------------------------------------
+
+create table public.proyectos (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null check (length(trim(nombre)) > 0),
+  ubicacion text,
+  fecha_inicio date not null default current_date,
+  fecha_fin date,
+  estado public.estado_proyecto not null default 'planeado',
+  creado_por uuid references public.perfiles (id) default auth.uid(),
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  constraint proyectos_fechas_coherentes
+    check (fecha_fin is null or fecha_fin >= fecha_inicio)
+);
+
+comment on table public.proyectos is
+  'Obras activas. Un residente solo ve los proyectos donde está dado de alta como miembro.';
+
+create trigger proyectos_actualizado
+before update on public.proyectos
+for each row execute function public.marcar_actualizado();
+
+-- Asignación de usuarios a proyectos. Es la base del aislamiento por obra:
+-- sin fila aquí, un usuario que no sea admin no ve el proyecto ni sus datos.
+create table public.proyecto_miembros (
+  proyecto_id uuid not null references public.proyectos (id) on delete cascade,
+  usuario_id uuid not null references public.perfiles (id) on delete cascade,
+  creado_en timestamptz not null default now(),
+  primary key (proyecto_id, usuario_id)
+);
+
+comment on table public.proyecto_miembros is
+  'Equipo asignado a cada obra. Lo administra el rol admin.';
+
+-- -----------------------------------------------------------------------------
+-- 5. Empleados
+-- -----------------------------------------------------------------------------
+
+create table public.empleados (
+  id uuid primary key default gen_random_uuid(),
+  proyecto_id uuid not null references public.proyectos (id) on delete restrict,
+  nombre text not null check (length(trim(nombre)) > 0),
+  puesto text,
+  sueldo numeric(12, 2) not null default 0 check (sueldo >= 0),
+  periodo_pago public.periodo_pago not null default 'diario',
+  fecha_ingreso date not null default current_date,
+  fecha_baja date,
+  activo boolean not null default true,
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  constraint empleados_fechas_coherentes
+    check (fecha_baja is null or fecha_baja >= fecha_ingreso),
+  -- Permite que asistencia valide que el empleado pertenece al mismo proyecto.
+  constraint empleados_id_proyecto_unico unique (id, proyecto_id)
+);
+
+comment on column public.empleados.sueldo is
+  'Importe en pesos según periodo_pago. No incluye prestaciones.';
+comment on column public.empleados.activo is
+  'Baja lógica: conserva historial de asistencia. No se recomienda borrar empleados.';
+
+create index empleados_proyecto_idx on public.empleados (proyecto_id);
+create index empleados_activos_idx on public.empleados (proyecto_id) where activo;
+
+create trigger empleados_actualizado
+before update on public.empleados
+for each row execute function public.marcar_actualizado();
+
+-- -----------------------------------------------------------------------------
+-- 6. Asistencia
+-- -----------------------------------------------------------------------------
+
+create table public.asistencia (
+  id uuid primary key default gen_random_uuid(),
+  empleado_id uuid not null,
+  proyecto_id uuid not null references public.proyectos (id) on delete restrict,
+  fecha date not null default current_date,
+  hora_entrada time,
+  hora_salida time,
+  registrado_por uuid references public.perfiles (id) default auth.uid(),
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  -- El empleado debe existir y pertenecer al proyecto indicado.
+  constraint asistencia_empleado_proyecto_fk
+    foreign key (empleado_id, proyecto_id)
+    references public.empleados (id, proyecto_id)
+    on delete restrict,
+  constraint asistencia_una_por_dia unique (empleado_id, fecha),
+  constraint asistencia_horas_coherentes
+    check (
+      hora_entrada is null
+      or hora_salida is null
+      or hora_salida > hora_entrada
+    )
+);
+
+comment on table public.asistencia is
+  'Un registro por empleado y día. La ausencia se representa con la falta de fila.';
+comment on column public.asistencia.registrado_por is
+  'Último usuario que capturó o corrigió el registro.';
+
+create index asistencia_proyecto_fecha_idx on public.asistencia (proyecto_id, fecha);
+create index asistencia_empleado_idx on public.asistencia (empleado_id, proyecto_id);
+
+create trigger asistencia_actualizado
+before update on public.asistencia
+for each row execute function public.marcar_actualizado();
+
+-- -----------------------------------------------------------------------------
+-- 7. Matriz de permisos
+--
+-- El rol admin siempre puede todo (se valida en la función puede()).
+-- Los otros roles se configuran con filas en esta tabla: así se ajusta el
+-- alcance del rol intermedio con un UPDATE, sin tocar código ni redesplegar.
+-- -----------------------------------------------------------------------------
+
+create table public.rol_permisos (
+  rol public.rol_usuario not null,
+  modulo public.modulo_sistema not null,
+  accion public.accion_sistema not null,
+  permitido boolean not null default false,
+  primary key (rol, modulo, accion)
+);
+
+comment on table public.rol_permisos is
+  'Matriz rol x módulo x acción. Cambiarla aquí cambia el comportamiento de toda la app.';
+
+-- Semilla: todas las combinaciones en falso.
+insert into public.rol_permisos (rol, modulo, accion, permitido)
+select r.rol, m.modulo, a.accion, false
+from unnest(enum_range(null::public.rol_usuario)) as r (rol)
+cross join unnest(enum_range(null::public.modulo_sistema)) as m (modulo)
+cross join unnest(enum_range(null::public.accion_sistema)) as a (accion);
+
+-- admin: todo permitido (queda explícito para que la matriz sea legible).
+update public.rol_permisos set permitido = true where rol = 'admin';
+
+-- permiso_medio: lectura total y operación diaria; aprueba solicitudes.
+update public.rol_permisos
+set permitido = true
+where rol = 'permiso_medio'
+  and accion = 'ver';
+
+update public.rol_permisos
+set permitido = true
+where rol = 'permiso_medio'
+  and accion in ('crear', 'editar')
+  and modulo in (
+    'personal', 'asistencia', 'materiales', 'generadores',
+    'bitacora', 'solicitudes', 'reportes'
+  );
+
+update public.rol_permisos
+set permitido = true
+where rol = 'permiso_medio'
+  and accion = 'aprobar'
+  and modulo = 'solicitudes';
+
+-- residente: captura en campo y consulta de su obra. No incluye 'personal':
+-- el residente ve nombres para pasar lista, pero no sueldos.
+update public.rol_permisos
+set permitido = true
+where rol = 'residente'
+  and accion = 'ver'
+  and modulo in (
+    'proyectos', 'asistencia', 'materiales',
+    'generadores', 'bitacora', 'solicitudes', 'reportes'
+  );
+
+update public.rol_permisos
+set permitido = true
+where rol = 'residente'
+  and accion = 'crear'
+  and modulo in ('asistencia', 'materiales', 'bitacora', 'solicitudes', 'reportes');
+
+update public.rol_permisos
+set permitido = true
+where rol = 'residente'
+  and accion = 'editar'
+  and modulo in ('asistencia', 'bitacora');
+
+-- -----------------------------------------------------------------------------
+-- 8. Consultas de apoyo para la app
+-- -----------------------------------------------------------------------------
+
+-- Rol del usuario autenticado. SECURITY DEFINER para leer perfiles sin
+-- quedar atrapado en su propia política RLS.
+create function public.rol_actual()
+returns public.rol_usuario
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select p.rol
+  from public.perfiles p
+  where p.id = auth.uid()
+    and p.activo;
+$$;
+
+create function public.es_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(public.rol_actual() = 'admin', false);
+$$;
+
+-- ¿El usuario puede ejecutar esta acción en este módulo?
+create function public.puede(
+  p_modulo public.modulo_sistema,
+  p_accion public.accion_sistema
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    coalesce(public.rol_actual() = 'admin', false)
+    or exists (
+      select 1
+      from public.rol_permisos rp
+      where rp.rol = public.rol_actual()
+        and rp.modulo = p_modulo
+        and rp.accion = p_accion
+        and rp.permitido
+    );
+$$;
+
+-- ¿El usuario pertenece al proyecto? El admin siempre tiene acceso.
+create function public.tiene_acceso_proyecto(p_proyecto_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    coalesce(public.es_admin(), false)
+    or exists (
+      select 1
+      from public.proyecto_miembros m
+      where m.proyecto_id = p_proyecto_id
+        and m.usuario_id = auth.uid()
+    );
+$$;
+
+-- Permisos efectivos del usuario, en formato { "modulo": { "accion": true } }.
+-- La interfaz los usa para ocultar lo que el usuario no puede hacer; la
+-- decisión final siempre la toma RLS en la base.
+create function public.mis_permisos()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(jsonb_object_agg(p.modulo, p.acciones), '{}'::jsonb)
+  from (
+    select
+      rp.modulo::text as modulo,
+      jsonb_object_agg(rp.accion::text, rp.permitido) as acciones
+    from public.rol_permisos rp
+    where rp.rol = public.rol_actual()
+    group by rp.modulo
+  ) p;
+$$;
+
+-- Perfil del usuario autenticado en una sola llamada.
+create function public.mi_perfil()
+returns table (
+  id uuid,
+  email text,
+  nombre text,
+  rol public.rol_usuario,
+  activo boolean
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select p.id, p.email, p.nombre, p.rol, p.activo
+  from public.perfiles p
+  where p.id = auth.uid();
+$$;
+
+-- Directorio mínimo del personal de una obra, sin sueldos ni datos laborales.
+-- Lo usa la pantalla de asistencia: el residente necesita nombres para pasar
+-- lista, pero no debe poder leer la tabla empleados completa.
+create function public.empleados_de_proyecto(p_proyecto_id uuid)
+returns table (
+  id uuid,
+  nombre text,
+  puesto text,
+  activo boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not public.tiene_acceso_proyecto(p_proyecto_id) then
+    raise exception 'Sin acceso a la obra' using errcode = '42501';
+  end if;
+
+  if not (
+    public.puede('asistencia', 'ver')
+    or public.puede('personal', 'ver')
+  ) then
+    raise exception 'Sin permiso para consultar personal' using errcode = '42501';
+  end if;
+
+  return query
+    select e.id, e.nombre, e.puesto, e.activo
+    from public.empleados e
+    where e.proyecto_id = p_proyecto_id
+    order by e.nombre;
+end;
+$$;
+
+-- Conteo de personal activo por obra, para el resumen. Evita exponer la tabla
+-- de empleados a los residentes.
+create function public.conteo_personal_por_proyecto()
+returns table (proyecto_id uuid, activos integer)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select e.proyecto_id, count(*)::integer as activos
+  from public.empleados e
+  where e.activo
+    and public.tiene_acceso_proyecto(e.proyecto_id)
+    and (
+      public.puede('asistencia', 'ver')
+      or public.puede('personal', 'ver')
+    )
+  group by e.proyecto_id;
+$$;
+
+-- Los helpers son de uso interno de RLS y de la app autenticada.
+revoke all on function public.rol_actual() from public;
+revoke all on function public.es_admin() from public;
+revoke all on function public.puede(public.modulo_sistema, public.accion_sistema) from public;
+revoke all on function public.tiene_acceso_proyecto(uuid) from public;
+revoke all on function public.mis_permisos() from public;
+revoke all on function public.mi_perfil() from public;
+revoke all on function public.empleados_de_proyecto(uuid) from public;
+revoke all on function public.conteo_personal_por_proyecto() from public;
+
+grant execute on function public.rol_actual() to authenticated;
+grant execute on function public.es_admin() to authenticated;
+grant execute on function public.puede(public.modulo_sistema, public.accion_sistema) to authenticated;
+grant execute on function public.tiene_acceso_proyecto(uuid) to authenticated;
+grant execute on function public.mis_permisos() to authenticated;
+grant execute on function public.mi_perfil() to authenticated;
+grant execute on function public.empleados_de_proyecto(uuid) to authenticated;
+grant execute on function public.conteo_personal_por_proyecto() to authenticated;
+
+-- ############################################################################
+-- INICIO 0002_rls_sprint1.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Sprint 1 · Seguridad a nivel de fila (RLS)
+-- Archivo: supabase/migrations/0002_rls_sprint1.sql
+--
+-- Se ejecuta después de 0001. Sin políticas, RLS bloquea todo: cada bloque de
+-- aquí abre exactamente lo necesario.
+--
+-- Regla general:
+--   admin         -> todo.
+--   permiso_medio -> lo que diga rol_permisos, limitado a sus proyectos.
+--   residente     -> captura y consulta dentro de sus proyectos.
+-- =============================================================================
+
+alter table public.perfiles enable row level security;
+alter table public.proyectos enable row level security;
+alter table public.proyecto_miembros enable row level security;
+alter table public.empleados enable row level security;
+alter table public.asistencia enable row level security;
+alter table public.rol_permisos enable row level security;
+
+-- El rol anónimo no toca ninguna tabla: sin sesión no hay datos.
+revoke all on public.perfiles from anon;
+revoke all on public.proyectos from anon;
+revoke all on public.proyecto_miembros from anon;
+revoke all on public.empleados from anon;
+revoke all on public.asistencia from anon;
+revoke all on public.rol_permisos from anon;
+
+grant select, insert, update, delete on public.perfiles to authenticated;
+grant select, insert, update, delete on public.proyectos to authenticated;
+grant select, insert, update, delete on public.proyecto_miembros to authenticated;
+grant select, insert, update, delete on public.empleados to authenticated;
+grant select, insert, update, delete on public.asistencia to authenticated;
+grant select on public.rol_permisos to authenticated;
+grant insert, update, delete on public.rol_permisos to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- perfiles
+-- -----------------------------------------------------------------------------
+
+-- Cada usuario ve su propio perfil; el admin ve y administra todos.
+create policy perfiles_select on public.perfiles
+for select to authenticated
+using (id = auth.uid() or public.es_admin());
+
+-- Un usuario puede corregir su nombre, pero no su rol ni desactivarse.
+create policy perfiles_update_propio on public.perfiles
+for update to authenticated
+using (id = auth.uid())
+with check (
+  id = auth.uid()
+  and activo
+  and rol = public.rol_actual()
+);
+
+create policy perfiles_update_admin on public.perfiles
+for update to authenticated
+using (public.es_admin())
+with check (public.es_admin());
+
+-- Sin política de INSERT: los perfiles los crea el trigger desde auth.users.
+-- Sin política de DELETE: las cuentas se eliminan desde Supabase Auth.
+
+-- -----------------------------------------------------------------------------
+-- proyectos
+-- -----------------------------------------------------------------------------
+
+create policy proyectos_select on public.proyectos
+for select to authenticated
+using (public.tiene_acceso_proyecto(id));
+
+create policy proyectos_insert on public.proyectos
+for insert to authenticated
+with check (
+  public.puede('proyectos', 'crear')
+  and creado_por = auth.uid()
+);
+
+create policy proyectos_update on public.proyectos
+for update to authenticated
+using (
+  public.es_admin()
+  or (public.tiene_acceso_proyecto(id) and public.puede('proyectos', 'editar'))
+)
+with check (
+  public.es_admin()
+  or (public.tiene_acceso_proyecto(id) and public.puede('proyectos', 'editar'))
+);
+
+-- Borrar obra es irreversible y arrastra historial: solo admin.
+create policy proyectos_delete on public.proyectos
+for delete to authenticated
+using (public.es_admin());
+
+-- -----------------------------------------------------------------------------
+-- proyecto_miembros
+-- -----------------------------------------------------------------------------
+
+create policy proyecto_miembros_select on public.proyecto_miembros
+for select to authenticated
+using (
+  usuario_id = auth.uid()
+  or public.es_admin()
+  or public.tiene_acceso_proyecto(proyecto_id)
+);
+
+create policy proyecto_miembros_insert on public.proyecto_miembros
+for insert to authenticated
+with check (public.es_admin());
+
+create policy proyecto_miembros_update on public.proyecto_miembros
+for update to authenticated
+using (public.es_admin())
+with check (public.es_admin());
+
+create policy proyecto_miembros_delete on public.proyecto_miembros
+for delete to authenticated
+using (public.es_admin());
+
+-- -----------------------------------------------------------------------------
+-- empleados
+-- -----------------------------------------------------------------------------
+
+create policy empleados_select on public.empleados
+for select to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('personal', 'ver')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+create policy empleados_insert on public.empleados
+for insert to authenticated
+with check (
+  public.es_admin()
+  or (
+    public.puede('personal', 'crear')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+create policy empleados_update on public.empleados
+for update to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('personal', 'editar')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+)
+with check (
+  public.es_admin()
+  or (
+    public.puede('personal', 'editar')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+create policy empleados_delete on public.empleados
+for delete to authenticated
+using (public.es_admin());
+
+-- -----------------------------------------------------------------------------
+-- asistencia
+-- -----------------------------------------------------------------------------
+
+create policy asistencia_select on public.asistencia
+for select to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('asistencia', 'ver')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+-- El residente registra a su nombre (registrado_por = auth.uid()).
+create policy asistencia_insert on public.asistencia
+for insert to authenticated
+with check (
+  public.es_admin()
+  or (
+    public.puede('asistencia', 'crear')
+    and public.tiene_acceso_proyecto(proyecto_id)
+    and registrado_por = auth.uid()
+  )
+);
+
+-- Permite completar la hora de salida o corregir el registro.
+create policy asistencia_update on public.asistencia
+for update to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('asistencia', 'editar')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+)
+with check (
+  public.es_admin()
+  or (
+    public.puede('asistencia', 'editar')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+-- Un registro de asistencia no se borra: se corrige. Solo el admin puede.
+create policy asistencia_delete on public.asistencia
+for delete to authenticated
+using (public.es_admin());
+
+-- -----------------------------------------------------------------------------
+-- rol_permisos
+-- -----------------------------------------------------------------------------
+
+-- La app lee la matriz (para pintar la interfaz). Solo admin la modifica,
+-- y en la práctica se ajusta con migraciones SQL versionadas.
+create policy rol_permisos_select on public.rol_permisos
+for select to authenticated
+using (true);
+
+create policy rol_permisos_insert on public.rol_permisos
+for insert to authenticated
+with check (public.es_admin());
+
+create policy rol_permisos_update on public.rol_permisos
+for update to authenticated
+using (public.es_admin())
+with check (public.es_admin());
+
+create policy rol_permisos_delete on public.rol_permisos
+for delete to authenticated
+using (public.es_admin());
+
+-- ############################################################################
+-- INICIO 0003_ajustes_post_instalacion.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Sprint 1 · Ajustes posteriores a la instalación
+-- Archivo: supabase/migrations/0003_ajustes_post_instalacion.sql
+--
+-- Este archivo NO es una migración automática: se ejecuta a mano, una vez,
+-- después de crear tus usuarios en Supabase Auth.
+--
+-- Pasos:
+--   1. Crea las cuentas en Authentication > Users (correo y contraseña).
+--   2. Ejecuta el bloque A para reparar perfiles faltantes.
+--   3. Ejecuta el bloque B con el correo del primer administrador.
+--   4. Verifica con el bloque C.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- A. Reparación: crear perfiles para usuarios de Auth que se hayan quedado
+--    sin perfil (por ejemplo, si se crearon antes de correr 0001).
+--    Es seguro ejecutarlo siempre: no duplica filas.
+-- -----------------------------------------------------------------------------
+
+insert into public.perfiles (id, email, nombre)
+select u.id, u.email, split_part(u.email, '@', 1)
+from auth.users u
+left join public.perfiles p on p.id = u.id
+where p.id is null;
+
+-- -----------------------------------------------------------------------------
+-- B. Nombrar al primer administrador
+--    Cambia el correo por el de la cuenta que ya creaste en Authentication.
+-- -----------------------------------------------------------------------------
+
+update public.perfiles
+set rol = 'admin', activo = true
+where lower(email) = lower('admin-de-obra@ejemplo.mx');  -- <-- EDITAR: correo real del administrador
+
+-- Si no sabes qué correos existen todavía:
+-- select id, email, rol, activo from public.perfiles order by creado_en;
+
+-- -----------------------------------------------------------------------------
+-- C. Verificación
+-- -----------------------------------------------------------------------------
+
+-- Debe haber exactamente el mismo número en ambas columnas.
+select
+  (select count(*) from auth.users) as usuarios_auth,
+  (select count(*) from public.perfiles) as perfiles;
+
+-- Debe aparecer al menos un admin activo.
+select email, rol, activo
+from public.perfiles
+order by rol, email;
+
+-- Debe devolver 150 filas (3 roles x 10 módulos x 5 acciones).
+select count(*) as filas_matriz from public.rol_permisos;
+
+-- -----------------------------------------------------------------------------
+-- D. Datos de ejemplo (opcional)
+--    Descomenta solo si quieres ver la interfaz con información de prueba.
+--    No lo ejecutes en la base real con obras en curso.
+-- -----------------------------------------------------------------------------
+
+/*
+insert into public.proyectos (nombre, ubicacion, fecha_inicio, estado)
+values ('Casa Habitación Lomas', 'Lomas de Chapultepec, CDMX', current_date - 45, 'en_ejecucion')
+returning id;
+
+insert into public.empleados (proyecto_id, nombre, puesto, sueldo, periodo_pago)
+select p.id, e.nombre, e.puesto, e.sueldo, 'diario'::public.periodo_pago
+from public.proyectos p
+cross join (values
+  ('Jorge Ramírez', 'Maestro de obra', 850.00),
+  ('Luis Trejo', 'Oficial albañil', 620.00),
+  ('Marco Salas', 'Ayudante general', 420.00)
+) as e (nombre, puesto, sueldo)
+where p.nombre = 'Casa Habitación Lomas';
+*/
+
+-- ############################################################################
+-- INICIO 0004_endurecimiento_sprint1.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Sprint 1 · Endurecimiento
+-- Archivo: supabase/migrations/0004_endurecimiento_sprint1.sql
+--
+-- Ejecutar después de 0003. Corrige hallazgos de la revisión de seguridad:
+--   1. Una cuenta deshabilitada ya no conserva acceso a sus obras.
+--   2. El rol, el estado y el correo del perfil no se pueden cambiar por API
+--      fuera de las reglas, y un admin no puede quitarse a sí mismo el acceso.
+--   3. La asistencia de los residentes se sella con hora y fecha del servidor,
+--      no se puede reescribir y queda auditada en asistencia_historial.
+--   4. Los DELETE respetan la columna "eliminar" de la matriz de permisos.
+--   5. Las funciones quedan cerradas para anon y PUBLIC.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 1. Acceso solo para cuentas activas
+--
+-- rol_actual() devuelve null si el perfil está inactivo o no existe. Hasta
+-- ahora, tiene_acceso_proyecto() solo miraba la membresía, así que una cuenta
+-- deshabilitada seguía viendo sus obras.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.tiene_acceso_proyecto(p_proyecto_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    public.rol_actual() is not null
+    and (
+      public.es_admin()
+      or exists (
+        select 1
+        from public.proyecto_miembros m
+        where m.proyecto_id = p_proyecto_id
+          and m.usuario_id = auth.uid()
+      )
+    );
+$$;
+
+-- La matriz también manda en la lectura de proyectos.
+drop policy if exists proyectos_select on public.proyectos;
+
+create policy proyectos_select on public.proyectos
+for select to authenticated
+using (
+  public.tiene_acceso_proyecto(id)
+  and public.puede('proyectos', 'ver')
+);
+
+-- -----------------------------------------------------------------------------
+-- 2. La columna "eliminar" deja de ser decorativa
+-- -----------------------------------------------------------------------------
+
+drop policy if exists proyectos_delete on public.proyectos;
+
+create policy proyectos_delete on public.proyectos
+for delete to authenticated
+using (
+  public.puede('proyectos', 'eliminar')
+  and public.tiene_acceso_proyecto(id)
+);
+
+drop policy if exists empleados_delete on public.empleados;
+
+create policy empleados_delete on public.empleados
+for delete to authenticated
+using (public.puede('personal', 'eliminar') and public.tiene_acceso_proyecto(proyecto_id));
+
+drop policy if exists asistencia_delete on public.asistencia;
+
+create policy asistencia_delete on public.asistencia
+for delete to authenticated
+using (public.puede('asistencia', 'eliminar') and public.tiene_acceso_proyecto(proyecto_id));
+
+-- -----------------------------------------------------------------------------
+-- 3. Protección del perfil
+--
+-- La política RLS permitía tocar cualquier columna del propio perfil, y un
+-- admin podía deshabilitarse o cambiarse el rol por API. Este trigger cierra
+-- ambas cosas. Los procesos internos (SQL Editor, service_role, GoTrue) no
+-- tienen auth.uid() y siguen pasando, que es lo que necesita el trigger de
+-- sincronización de correo.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.proteger_perfil()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  -- La sincronización de correo desde auth.users corre como proceso interno.
+  if current_setting('app.sincronizando_email', true) = 'on' then
+    return new;
+  end if;
+
+  -- El correo es espejo de auth.users: solo lo actualiza el trigger de
+  -- sincronización.
+  new.email := old.email;
+
+  if not public.es_admin() then
+    if new.rol is distinct from old.rol
+       or new.activo is distinct from old.activo then
+      raise exception 'Solo administración puede cambiar el rol o el estado de una cuenta'
+        using errcode = '42501';
+    end if;
+  elsif old.id = auth.uid()
+        and (
+          new.rol is distinct from old.rol
+          or new.activo is distinct from old.activo
+        ) then
+    raise exception 'No puedes cambiar tu propio rol ni deshabilitar tu cuenta'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists perfiles_proteger on public.perfiles;
+
+create trigger perfiles_proteger
+before update on public.perfiles
+for each row execute function public.proteger_perfil();
+
+-- La sincronización de correo se marca como proceso interno para que el
+-- trigger de protección la deje pasar incluso si el JWT del usuario sigue
+-- presente en la transacción de GoTrue.
+create or replace function public.sincronizar_email_usuario()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform set_config('app.sincronizando_email', 'on', true);
+  update public.perfiles set email = new.email where id = new.id;
+  perform set_config('app.sincronizando_email', 'off', true);
+  return new;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 4. Asistencia: sellado en servidor e historial
+-- -----------------------------------------------------------------------------
+
+create table if not exists public.asistencia_historial (
+  id bigint generated always as identity primary key,
+  asistencia_id uuid not null,
+  empleado_id uuid not null,
+  proyecto_id uuid not null,
+  operacion text not null check (operacion in ('alta', 'cambio', 'baja')),
+  datos_anteriores jsonb,
+  datos_nuevos jsonb,
+  usuario_id uuid,
+  creado_en timestamptz not null default now()
+);
+
+comment on table public.asistencia_historial is
+  'Bitácora inmutable de altas, cambios y bajas de asistencia. La escribe un trigger.';
+
+create index if not exists asistencia_historial_proyecto_idx
+  on public.asistencia_historial (proyecto_id, creado_en desc);
+
+create index if not exists asistencia_historial_asistencia_idx
+  on public.asistencia_historial (asistencia_id);
+
+alter table public.asistencia_historial enable row level security;
+
+revoke all on public.asistencia_historial from anon;
+grant select on public.asistencia_historial to authenticated;
+
+drop policy if exists asistencia_historial_select on public.asistencia_historial;
+
+create policy asistencia_historial_select on public.asistencia_historial
+for select to authenticated
+using (
+  public.es_admin()
+  or (
+    public.rol_actual() = 'permiso_medio'
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+-- Sella la asistencia que captura un residente:
+--   * la fecha y la hora de entrada las pone el servidor (zona de la obra);
+--   * no puede cambiar empleado, obra, fecha ni hora de entrada;
+--   * no puede reabrir ni reescribir una jornada cerrada;
+--   * registrado_por siempre es quien hace la operación.
+-- Admin y permiso medio conservan la captura manual para corregir días
+-- anteriores, pero tampoco pueden fechar en el futuro.
+create or replace function public.sellar_asistencia()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_gestor boolean;
+  v_hoy date := (now() at time zone 'America/Mexico_City')::date;
+  v_ahora time := (now() at time zone 'America/Mexico_City')::time;
+begin
+  -- SQL Editor, service_role y procesos internos: sin JWT de usuario.
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  v_gestor := public.rol_actual() in ('admin', 'permiso_medio');
+
+  if tg_op = 'INSERT' then
+    if not v_gestor then
+      new.fecha := v_hoy;
+      new.hora_entrada := v_ahora;
+      new.hora_salida := null;
+      new.registrado_por := auth.uid();
+    end if;
+  else
+    if not v_gestor then
+      if new.empleado_id is distinct from old.empleado_id
+         or new.proyecto_id is distinct from old.proyecto_id
+         or new.fecha is distinct from old.fecha then
+        raise exception 'No puedes cambiar el empleado, la obra ni la fecha del registro'
+          using errcode = '42501';
+      end if;
+
+      if new.hora_entrada is distinct from old.hora_entrada then
+        raise exception 'La hora de entrada no se modifica'
+          using errcode = '42501';
+      end if;
+
+      if old.hora_salida is not null
+         and new.hora_salida is distinct from old.hora_salida then
+        raise exception 'La jornada ya está cerrada'
+          using errcode = '42501';
+      end if;
+
+      new.registrado_por := auth.uid();
+
+      if new.hora_salida is not null then
+        new.hora_salida := v_ahora;
+      end if;
+    end if;
+  end if;
+
+  if new.fecha > v_hoy then
+    raise exception 'La fecha de asistencia no puede ser futura'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists asistencia_sellar on public.asistencia;
+
+create trigger asistencia_sellar
+before insert or update on public.asistencia
+for each row execute function public.sellar_asistencia();
+
+-- Historial: se escribe después de cada cambio, con el antes y el después.
+create or replace function public.auditar_asistencia()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_id uuid;
+  v_empleado uuid;
+  v_proyecto uuid;
+  v_operacion text;
+  v_antes jsonb;
+  v_despues jsonb;
+begin
+  if tg_op = 'DELETE' then
+    v_id := old.id;
+    v_empleado := old.empleado_id;
+    v_proyecto := old.proyecto_id;
+    v_operacion := 'baja';
+    v_antes := to_jsonb(old);
+    v_despues := null;
+  else
+    v_id := new.id;
+    v_empleado := new.empleado_id;
+    v_proyecto := new.proyecto_id;
+    v_operacion := case when tg_op = 'INSERT' then 'alta' else 'cambio' end;
+    v_antes := case when tg_op = 'UPDATE' then to_jsonb(old) else null end;
+    v_despues := to_jsonb(new);
+  end if;
+
+  insert into public.asistencia_historial (
+    asistencia_id,
+    empleado_id,
+    proyecto_id,
+    operacion,
+    datos_anteriores,
+    datos_nuevos,
+    usuario_id
+  ) values (
+    v_id,
+    v_empleado,
+    v_proyecto,
+    v_operacion,
+    v_antes,
+    v_despues,
+    auth.uid()
+  );
+
+  return null;
+end;
+$$;
+
+drop trigger if exists asistencia_auditar on public.asistencia;
+
+create trigger asistencia_auditar
+after insert or update or delete on public.asistencia
+for each row execute function public.auditar_asistencia();
+
+-- -----------------------------------------------------------------------------
+-- 5. Cierre de permisos de ejecución
+--
+-- Supabase concede EXECUTE a anon y authenticated por defecto en el esquema
+-- public. revoke ... from public no quita esa concesión explícita: hay que
+-- nombrar a anon. Las funciones de trigger no se pueden invocar directamente,
+-- pero también se cierran.
+-- -----------------------------------------------------------------------------
+
+revoke all on function public.rol_actual() from public, anon;
+revoke all on function public.es_admin() from public, anon;
+revoke all on function public.puede(public.modulo_sistema, public.accion_sistema) from public, anon;
+revoke all on function public.tiene_acceso_proyecto(uuid) from public, anon;
+revoke all on function public.mis_permisos() from public, anon;
+revoke all on function public.mi_perfil() from public, anon;
+revoke all on function public.empleados_de_proyecto(uuid) from public, anon;
+revoke all on function public.conteo_personal_por_proyecto() from public, anon;
+
+grant execute on function public.rol_actual() to authenticated;
+grant execute on function public.es_admin() to authenticated;
+grant execute on function public.puede(public.modulo_sistema, public.accion_sistema) to authenticated;
+grant execute on function public.tiene_acceso_proyecto(uuid) to authenticated;
+grant execute on function public.mis_permisos() to authenticated;
+grant execute on function public.mi_perfil() to authenticated;
+grant execute on function public.empleados_de_proyecto(uuid) to authenticated;
+grant execute on function public.conteo_personal_por_proyecto() to authenticated;
+
+revoke all on function public.marcar_actualizado() from public, anon;
+revoke all on function public.crear_perfil_nuevo_usuario() from public, anon;
+revoke all on function public.sincronizar_email_usuario() from public, anon;
+revoke all on function public.proteger_perfil() from public, anon;
+revoke all on function public.sellar_asistencia() from public, anon;
+revoke all on function public.auditar_asistencia() from public, anon;
+
+grant execute on function public.marcar_actualizado() to authenticated;
+grant execute on function public.proteger_perfil() to authenticated;
+grant execute on function public.sellar_asistencia() to authenticated;
+grant execute on function public.auditar_asistencia() to authenticated;
+
+-- GoTrue usa su propio rol al crear usuarios; si existe, se le permite ejecutar
+-- el trigger de alta de perfil. No se otorga a anon.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    begin
+      execute 'grant execute on function public.crear_perfil_nuevo_usuario() to supabase_auth_admin';
+      execute 'grant execute on function public.sincronizar_email_usuario() to supabase_auth_admin';
+    exception when insufficient_privilege then
+      raise warning 'No se pudo otorgar EXECUTE a supabase_auth_admin: %', sqlerrm;
+    end;
+  end if;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 6. Verificación
+-- -----------------------------------------------------------------------------
+
+-- No debe devolver filas.
+select routine_name, grantee
+from information_schema.routine_privileges
+where routine_schema = 'public'
+  and grantee in ('anon', 'PUBLIC');
+
+-- Debe listar las políticas nuevas.
+select tablename, policyname, cmd
+from pg_policies
+where schemaname = 'public'
+  and tablename in ('proyectos', 'empleados', 'asistencia', 'asistencia_historial')
+order by tablename, policyname;
+
+-- ############################################################################
+-- INICIO 0005_revision_sprint1.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Sprint 1 · Ajustes de la revisión
+-- Archivo: supabase/migrations/0005_revision_sprint1.sql
+--
+-- Ejecutar después de 0004. Cierra tres detalles:
+--   1. El historial de asistencia es inmutable también a nivel de privilegios
+--      y solo lo consulta administración.
+--   2. registrado_por siempre es quien hace la operación, también para la
+--      oficina que corrige días anteriores.
+--   3. Una cuenta inactiva tampoco ve sus propias filas de proyecto_miembros.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 1. Historial: solo lectura, solo administración
+-- -----------------------------------------------------------------------------
+
+revoke all on public.asistencia_historial from public, anon, authenticated;
+grant select on public.asistencia_historial to authenticated;
+
+drop policy if exists asistencia_historial_select on public.asistencia_historial;
+
+create policy asistencia_historial_select on public.asistencia_historial
+for select to authenticated
+using (public.es_admin());
+
+-- -----------------------------------------------------------------------------
+-- 2. Autor de la asistencia
+-- -----------------------------------------------------------------------------
+
+create or replace function public.sellar_asistencia()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_gestor boolean;
+  v_hoy date := (now() at time zone 'America/Mexico_City')::date;
+  v_ahora time := (now() at time zone 'America/Mexico_City')::time;
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  v_gestor := public.rol_actual() in ('admin', 'permiso_medio');
+
+  if tg_op = 'INSERT' then
+    if not v_gestor then
+      new.fecha := v_hoy;
+      new.hora_entrada := v_ahora;
+      new.hora_salida := null;
+    end if;
+  else
+    if not v_gestor then
+      if new.empleado_id is distinct from old.empleado_id
+         or new.proyecto_id is distinct from old.proyecto_id
+         or new.fecha is distinct from old.fecha then
+        raise exception 'No puedes cambiar el empleado, la obra ni la fecha del registro'
+          using errcode = '42501';
+      end if;
+
+      if new.hora_entrada is distinct from old.hora_entrada then
+        raise exception 'La hora de entrada no se modifica'
+          using errcode = '42501';
+      end if;
+
+      if old.hora_salida is not null
+         and new.hora_salida is distinct from old.hora_salida then
+        raise exception 'La jornada ya está cerrada'
+          using errcode = '42501';
+      end if;
+
+      if new.hora_salida is not null then
+        new.hora_salida := v_ahora;
+      end if;
+    end if;
+  end if;
+
+  -- Vale para todos los roles: el autor es quien tiene la sesión.
+  new.registrado_por := auth.uid();
+
+  if new.fecha > v_hoy then
+    raise exception 'La fecha de asistencia no puede ser futura'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 3. Miembros de proyecto: la cuenta inactiva tampoco ve sus filas
+-- -----------------------------------------------------------------------------
+
+drop policy if exists proyecto_miembros_select on public.proyecto_miembros;
+
+create policy proyecto_miembros_select on public.proyecto_miembros
+for select to authenticated
+using (
+  public.rol_actual() is not null
+  and (
+    usuario_id = auth.uid()
+    or public.es_admin()
+    or public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+-- =============================================================================
+-- PROMOCIÓN DEL ADMINISTRADOR
+-- Ejecutar DESPUÉS de crear la cuenta en Authentication > Users.
+-- Cambia el correo de ejemplo por el correo real.
+-- =============================================================================
+
+insert into public.perfiles (id, email, nombre)
+select u.id, u.email, split_part(u.email, '@', 1)
+from auth.users u
+left join public.perfiles p on p.id = u.id
+where p.id is null;
+
+update public.perfiles
+set rol = 'admin', activo = true
+where lower(email) = lower('admin-de-obra@ejemplo.mx');  -- <-- EDITAR
+
+select email, rol, activo from public.perfiles order by email;
