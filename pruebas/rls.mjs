@@ -99,6 +99,10 @@ try {
   ok('0005 revisión')
   await ejecutar('0006_cuadrillas_jornada_residentes.sql')
   ok('0006 cuadrillas y jornada')
+  await ejecutar('0007_materiales.sql')
+  ok('0007 materiales')
+  await ejecutar('0007_materiales.sql')
+  ok('0007 materiales repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -152,6 +156,45 @@ try {
   )
   if (directorioPropio.rows.length === 2) ok('directorio solo de su cuadrilla')
   else fallo('directorio solo de su cuadrilla', `vio ${directorioPropio.rows.length}`)
+
+  const materialCreado = await db.query(`
+    insert into public.materiales
+      (proyecto_id, nombre, unidad, costo_unitario, stock_minimo)
+    values
+      ('${P1}', 'Cemento', 'bulto', 180, 10)
+    returning id
+  `)
+  const MAT = materialCreado.rows[0].id
+  ok('residente crea material de su obra')
+
+  await db.query(`
+    insert into public.material_movimientos
+      (material_id, tipo, cantidad, costo_unitario, proveedor, registrado_por)
+    values
+      ('${MAT}', 'entrada', 20, 180, 'Proveedor Demo', '${RES}')
+  `)
+  const movimiento = await db.query(
+    'select proyecto_id, tipo, cantidad::text, registrado_por from public.material_movimientos where material_id = $1',
+    [MAT],
+  )
+  if (
+    movimiento.rows[0]?.proyecto_id === P1 &&
+    movimiento.rows[0]?.tipo === 'entrada' &&
+    movimiento.rows[0]?.registrado_por === RES
+  ) {
+    ok('movimiento de material con obra y autor forzados')
+  } else {
+    fallo('movimiento de material con obra y autor forzados', JSON.stringify(movimiento.rows[0]))
+  }
+
+  const sinEditarMaterial = await db.query(
+    `update public.materiales set costo_unitario = 200 where id = '${MAT}' returning id`,
+  )
+  if (sinEditarMaterial.rows.length === 0) ok('residente no edita el catálogo')
+  else fallo('residente no edita el catálogo', 'actualizó una fila')
+
+  await esperarError('residente no crea material en obra ajena', () =>
+    db.exec(`insert into public.materiales (proyecto_id, nombre) values ('${P2}', 'Ajeno')`), '42501')
 
   await esperarError('residente no cambia su rol', () =>
     db.exec(`update public.perfiles set rol = 'admin' where id = '${RES}'`), '42501')
@@ -236,6 +279,19 @@ try {
   const empleadosOficina = await db.query('select count(*)::int as n from public.empleados')
   if (empleadosOficina.rows[0].n === 2) ok('permiso medio consulta al personal de su obra')
   else fallo('permiso medio consulta al personal de su obra', `vio ${empleadosOficina.rows[0].n}`)
+
+  const materialesOficina = await db.query('select count(*)::int as n from public.materiales')
+  const movimientosOficina = await db.query(
+    'select count(*)::int as n from public.material_movimientos',
+  )
+  if (materialesOficina.rows[0].n === 1 && movimientosOficina.rows[0].n === 1) {
+    ok('permiso medio consulta materiales de su obra')
+  } else {
+    fallo(
+      'permiso medio consulta materiales de su obra',
+      `materiales ${materialesOficina.rows[0].n}, movimientos ${movimientosOficina.rows[0].n}`,
+    )
+  }
 
   await esperarError('permiso medio no crea personal', () =>
     db.exec(`insert into public.empleados (proyecto_id, nombre, sueldo) values ('${P1}', 'Ajeno', 100)`), '42501')

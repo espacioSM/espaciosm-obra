@@ -89,6 +89,36 @@ export type ResidenteEnObra = {
   hora_salida: string | null
 }
 
+export type TipoMovimientoMaterial = 'entrada' | 'salida'
+
+export type Material = {
+  id: string
+  proyecto_id: string
+  nombre: string
+  unidad: string
+  costo_unitario: number
+  stock_minimo: number
+  activo: boolean
+  creado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type MaterialMovimiento = {
+  id: string
+  material_id: string
+  proyecto_id: string
+  tipo: TipoMovimientoMaterial
+  fecha: string
+  cantidad: number
+  costo_unitario: number
+  proveedor: string | null
+  nota: string | null
+  registrado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
 export type Asistencia = {
   id: string
   empleado_id: string
@@ -242,6 +272,51 @@ export type Database = {
         }
         Relationships: []
       }
+      materiales: {
+        Row: Material
+        Insert: {
+          id?: string
+          proyecto_id: string
+          nombre: string
+          unidad?: string
+          costo_unitario?: number
+          stock_minimo?: number
+          activo?: boolean
+          creado_por?: string | null
+        }
+        Update: {
+          nombre?: string
+          unidad?: string
+          costo_unitario?: number
+          stock_minimo?: number
+          activo?: boolean
+        }
+        Relationships: []
+      }
+      material_movimientos: {
+        Row: MaterialMovimiento
+        Insert: {
+          id?: string
+          material_id: string
+          proyecto_id?: string
+          tipo: TipoMovimientoMaterial
+          fecha?: string
+          cantidad: number
+          costo_unitario?: number
+          proveedor?: string | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          tipo?: TipoMovimientoMaterial
+          fecha?: string
+          cantidad?: number
+          costo_unitario?: number
+          proveedor?: string | null
+          nota?: string | null
+        }
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -299,6 +374,7 @@ export type Database = {
       rol_usuario: Rol
       estado_proyecto: EstadoProyecto
       periodo_pago: PeriodoPago
+      tipo_movimiento_material: TipoMovimientoMaterial
       modulo_sistema: Modulo
       accion_sistema: Accion
     }

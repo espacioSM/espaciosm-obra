@@ -6,12 +6,15 @@ import type {
   DirectorioEmpleado,
   Empleado,
   EstadoProyecto,
+  Material,
+  MaterialMovimiento,
   Perfil,
   PeriodoPago,
   Proyecto,
   ProyectoMiembro,
   ResidenteEnObra,
   Rol,
+  TipoMovimientoMaterial,
 } from '../lib/tipos'
 
 // -----------------------------------------------------------------------------
@@ -313,6 +316,89 @@ export async function listarResidentesEnObra(fecha: string): Promise<ResidenteEn
   const { data, error } = await supabase.rpc('residentes_en_obra', { p_fecha: fecha })
   if (error) throw error
   return data ?? []
+}
+
+// -----------------------------------------------------------------------------
+// Materiales
+// -----------------------------------------------------------------------------
+
+export type DatosMaterial = {
+  proyectoId: string
+  nombre: string
+  unidad: string
+  costoUnitario: number
+  stockMinimo: number
+}
+
+export type DatosMovimientoMaterial = {
+  materialId: string
+  tipo: TipoMovimientoMaterial
+  fecha: string
+  cantidad: number
+  costoUnitario: number
+  proveedor: string | null
+  nota: string | null
+  usuarioId: string | null
+}
+
+export async function listarMateriales(proyectoId: string): Promise<Material[]> {
+  const { data, error } = await supabase
+    .from('materiales')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .eq('activo', true)
+    .order('nombre')
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearMaterial(datos: DatosMaterial): Promise<Material> {
+  const { data, error } = await supabase
+    .from('materiales')
+    .insert({
+      proyecto_id: datos.proyectoId,
+      nombre: datos.nombre,
+      unidad: datos.unidad,
+      costo_unitario: datos.costoUnitario,
+      stock_minimo: datos.stockMinimo,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function listarMovimientosMaterial(
+  proyectoId: string,
+): Promise<MaterialMovimiento[]> {
+  const { data, error } = await supabase
+    .from('material_movimientos')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearMovimientoMaterial(
+  datos: DatosMovimientoMaterial,
+): Promise<void> {
+  const { error } = await supabase.from('material_movimientos').insert({
+    material_id: datos.materialId,
+    tipo: datos.tipo,
+    fecha: datos.fecha,
+    cantidad: datos.cantidad,
+    costo_unitario: datos.costoUnitario,
+    proveedor: datos.proveedor,
+    nota: datos.nota,
+    registrado_por: datos.usuarioId ?? undefined,
+  })
+
+  if (error) throw error
 }
 
 // -----------------------------------------------------------------------------
