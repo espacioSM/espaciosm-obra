@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase'
 import { hoyISO, horaActual } from '../lib/formato'
 import type {
   Asistencia,
+  AsistenciaResidente,
   DirectorioEmpleado,
   Empleado,
   EstadoProyecto,
@@ -9,6 +10,7 @@ import type {
   PeriodoPago,
   Proyecto,
   ProyectoMiembro,
+  ResidenteEnObra,
   Rol,
 } from '../lib/tipos'
 
@@ -255,6 +257,62 @@ export async function guardarJornada(datos: JornadaManual): Promise<void> {
   )
 
   if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Jornada del propio residente
+// -----------------------------------------------------------------------------
+
+export async function listarMiJornada(
+  usuarioId: string,
+  fecha: string,
+): Promise<AsistenciaResidente | null> {
+  const { data, error } = await supabase
+    .from('asistencia_residentes')
+    .select('*')
+    .eq('usuario_id', usuarioId)
+    .eq('fecha', fecha)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ?? null
+}
+
+export async function registrarMiEntrada(
+  proyectoId: string,
+  usuarioId: string,
+): Promise<void> {
+  const { error } = await supabase.from('asistencia_residentes').insert({
+    usuario_id: usuarioId,
+    proyecto_id: proyectoId,
+    fecha: hoyISO(),
+    registrado_por: usuarioId,
+  })
+
+  if (error) throw error
+}
+
+export async function registrarMiSalida(
+  asistenciaId: string,
+  usuarioId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('asistencia_residentes')
+    .update({ hora_salida: horaActual(), registrado_por: usuarioId })
+    .eq('id', asistenciaId)
+    .is('hora_salida', null)
+    .select('id')
+
+  if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('SALIDA_YA_REGISTRADA')
+  }
+}
+
+export async function listarResidentesEnObra(fecha: string): Promise<ResidenteEnObra[]> {
+  const { data, error } = await supabase.rpc('residentes_en_obra', { p_fecha: fecha })
+  if (error) throw error
+  return data ?? []
 }
 
 // -----------------------------------------------------------------------------

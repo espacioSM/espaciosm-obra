@@ -1,16 +1,19 @@
 import { Link } from 'react-router-dom'
 import { useDatos } from '../lib/useDatos'
-import { cargarResumen } from '../datos/consultas'
+import { cargarResumen, listarResidentesEnObra } from '../datos/consultas'
 import { useSesion } from '../sesion/SesionProvider'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
 import { InsigniaEstado } from '../componentes/Insignias'
-import { formatearFecha, hoyISO } from '../lib/formato'
+import { formatearFecha, formatearHora, hoyISO } from '../lib/formato'
 import { puede } from '../lib/permisos'
 
 export function Resumen() {
   const { perfil, permisos } = useSesion()
   const { datos, cargando, error, recargar } = useDatos(cargarResumen, [])
+  const residentesConsulta = useDatos(() => listarResidentesEnObra(hoyISO()), [])
+  const residentes = residentesConsulta.datos ?? []
+  const residentesEnObra = residentes.filter((residente) => !residente.hora_salida).length
 
   const proyectos = datos?.proyectos ?? []
   const obrasActivas = proyectos.filter(
@@ -78,6 +81,60 @@ export function Resumen() {
           <p className="kpi__nota">Registros de hoy que aún no cierran</p>
         </article>
       </section>
+
+      {perfil && perfil.rol !== 'residente' && residentes.length > 0 ? (
+        <section className="tarjeta tarjeta--plana" aria-labelledby="titulo-residentes">
+          <div className="seccion__cabecera">
+            <div>
+              <h2 className="seccion__titulo" id="titulo-residentes">
+                Residentes en obra hoy
+              </h2>
+              <p className="seccion__nota">
+                Entradas y salidas que ya registraron los residentes.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="boton boton--tenue"
+              onClick={residentesConsulta.recargar}
+            >
+              Actualizar
+            </button>
+          </div>
+
+          {residentesEnObra > 0 ? (
+            <Aviso tipo="info">
+              {residentesEnObra} residente{residentesEnObra === 1 ? '' : 's'} en obra
+              ahora mismo.
+            </Aviso>
+          ) : null}
+
+          <ul className="lista-simple">
+            {residentes.map((residente) => (
+              <li key={`${residente.usuario_id}-${residente.proyecto_id}`}>
+                <span>
+                  <span className="celda-principal">
+                    {residente.nombre ?? residente.email}
+                  </span>
+                  <span className="celda-nota">{residente.proyecto_nombre}</span>
+                </span>
+                <span className="filtros">
+                  <span className="meta-dato">
+                    <span className="meta-etiqueta">Entrada</span>
+                    {formatearHora(residente.hora_entrada)}
+                  </span>
+                  <span className="meta-dato">
+                    <span className="meta-etiqueta">Salida</span>
+                    {residente.hora_salida
+                      ? formatearHora(residente.hora_salida)
+                      : 'En obra'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {cargando && !datos ? (
         <Cargando />

@@ -4,12 +4,17 @@ import {
   guardarJornada,
   listarAsistencia,
   listarDirectorio,
+  listarMiJornada,
   listarProyectos,
+  listarResidentesEnObra,
   registrarEntrada,
+  registrarMiEntrada,
+  registrarMiSalida,
   registrarSalida,
 } from '../datos/consultas'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
+import { Insignia } from '../componentes/Insignias'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import { mensajeDeError } from '../lib/errores'
@@ -54,13 +59,21 @@ export function Asistencia() {
   }, [esGestor])
 
   const consulta = useDatos(async () => {
-    if (proyectoId === '') return { empleados: [], asistencia: [] }
-    const [empleados, asistencia] = await Promise.all([
+    if (proyectoId === '') {
+      return { empleados: [], asistencia: [], miJornada: null, residentes: [] }
+    }
+
+    const [empleados, asistencia, miJornada, residentes] = await Promise.all([
       listarDirectorio(proyectoId),
       listarAsistencia(proyectoId, fecha),
+      perfil?.rol === 'residente'
+        ? listarMiJornada(usuarioId, fecha)
+        : Promise.resolve(null),
+      esGestor ? listarResidentesEnObra(fecha) : Promise.resolve([]),
     ])
-    return { empleados, asistencia }
-  }, [proyectoId, fecha])
+
+    return { empleados, asistencia, miJornada, residentes }
+  }, [proyectoId, fecha, usuarioId, perfil?.rol, esGestor])
 
   const empleadosActivos = (consulta.datos?.empleados ?? []).filter(
     (empleado) => empleado.activo,
@@ -68,6 +81,9 @@ export function Asistencia() {
   const registros = consulta.datos?.asistencia ?? []
   const porEmpleado = new Map(registros.map((registro) => [registro.empleado_id, registro]))
   const sinSalida = registros.filter((registro) => !registro.hora_salida).length
+  const miJornada = consulta.datos?.miJornada ?? null
+  const residentes = consulta.datos?.residentes ?? []
+  const residentesEnObra = residentes.filter((residente) => !residente.hora_salida).length
 
   useEffect(() => {
     if (empleadosActivos.length === 0) {
@@ -149,6 +165,48 @@ export function Asistencia() {
     }
   }
 
+  async function miEntrada() {
+    if (proyectoId === '') return
+
+    setProcesando('mi-entrada')
+    setAviso(null)
+
+    try {
+      await registrarMiEntrada(proyectoId, usuarioId)
+      consulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Entrada a obra registrada.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setProcesando(null)
+    }
+  }
+
+  async function miSalida() {
+    if (!miJornada) return
+
+    setProcesando('mi-salida')
+    setAviso(null)
+
+    try {
+      await registrarMiSalida(miJornada.id, usuarioId)
+      consulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Salida de obra registrada.' })
+    } catch (fallo) {
+      if (fallo instanceof Error && fallo.message === 'SALIDA_YA_REGISTRADA') {
+        consulta.recargar()
+        setAviso({
+          tipo: 'error',
+          texto: 'La salida ya estaba registrada. Se actualizó la pantalla.',
+        })
+      } else {
+        setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+      }
+    } finally {
+      setProcesando(null)
+    }
+  }
+
   if (!puedeVer) {
     return (
       <div className="pagina">
@@ -170,6 +228,124 @@ export function Asistencia() {
           </p>
         </div>
       </div>
+
+      {perfil?.rol === 'residente' && proyectoId !== '' ? (
+        <section className="tarjeta tarjeta--plana">
+          <div className="seccion__cabecera">
+            <div>
+              <h2 className="seccion__titulo">Mi jornada en obra</h2>
+              <p className="seccion__nota">
+                Tu entrada y salida de hoy. Es independiente de la asistencia de tu
+                cuadrilla.
+              </p>
+            </div>
+            {miJornada ? (
+              <Insignia tono={miJornada.hora_salida ? 'tenue' : 'en_ejecucion'}>
+                {miJornada.hora_salida ? 'Jornada cerrada' : 'En obra'}
+              </Insignia>
+            ) : null}
+          </div>
+
+          <div className="filtros">
+            <div className="dato">
+              <span className="meta-etiqueta">Entrada</span>
+              <span className="dato__valor">
+                {miJornada ? formatearHora(miJornada.hora_entrada) : 'Sin registro'}
+              </span>
+            </div>
+            <div className="dato">
+              <span className="meta-etiqueta">Salida</span>
+              <span className="dato__valor">
+                {miJornada?.hora_salida ? formatearHora(miJornada.hora_salida) : '—'}
+              </span>
+            </div>
+
+            <div className="acciones">
+              {!miJornada ? (
+                <button
+                  type="button"
+                  className="boton boton--primario"
+                  disabled={procesando === 'mi-entrada'}
+                  onClick={() => void miEntrada()}
+                >
+                  {procesando === 'mi-entrada'
+                    ? 'Guardando…'
+                    : 'Registrar mi entrada'}
+                </button>
+              ) : null}
+
+              {miJornada && !miJornada.hora_salida ? (
+                <button
+                  type="button"
+                  className="boton boton--primario"
+                  disabled={procesando === 'mi-salida'}
+                  onClick={() => void miSalida()}
+                >
+                  {procesando === 'mi-salida' ? 'Guardando…' : 'Registrar mi salida'}
+                </button>
+              ) : null}
+
+              {miJornada?.hora_salida ? (
+                <span className="seccion__nota">Ya registraste tu salida de hoy.</span>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {esGestor ? (
+        <section className="tarjeta tarjeta--plana">
+          <div className="seccion__cabecera">
+            <div>
+              <h2 className="seccion__titulo">Residentes en obra hoy</h2>
+              <p className="seccion__nota">
+                Entradas y salidas que registran los residentes en sus obras.
+              </p>
+            </div>
+            <button type="button" className="boton boton--tenue" onClick={consulta.recargar}>
+              Actualizar
+            </button>
+          </div>
+
+          {residentesEnObra > 0 ? (
+            <Aviso tipo="info">
+              {residentesEnObra} residente{residentesEnObra === 1 ? '' : 's'} en obra
+              ahora mismo.
+            </Aviso>
+          ) : null}
+
+          {residentes.length === 0 ? (
+            <Vacio titulo="Sin registros de residentes">
+              Cuando un residente registre su entrada aparecerá aquí.
+            </Vacio>
+          ) : (
+            <ul className="lista-simple">
+              {residentes.map((residente) => (
+                <li key={`${residente.usuario_id}-${residente.proyecto_id}`}>
+                  <span>
+                    <span className="celda-principal">
+                      {residente.nombre ?? residente.email}
+                    </span>
+                    <span className="celda-nota">{residente.proyecto_nombre}</span>
+                  </span>
+                  <span className="filtros">
+                    <span className="meta-dato">
+                      <span className="meta-etiqueta">Entrada</span>
+                      {formatearHora(residente.hora_entrada)}
+                    </span>
+                    <span className="meta-dato">
+                      <span className="meta-etiqueta">Salida</span>
+                      {residente.hora_salida
+                        ? formatearHora(residente.hora_salida)
+                        : 'En obra'}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {proyectosConsulta.error ? (
         <Aviso tipo="error">{proyectosConsulta.error}</Aviso>

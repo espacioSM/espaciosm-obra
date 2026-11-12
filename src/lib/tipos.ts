@@ -62,8 +62,31 @@ export type Empleado = {
   fecha_ingreso: string
   fecha_baja: string | null
   activo: boolean
+  creado_por: string | null
   creado_en: string
   actualizado_en: string
+}
+
+export type AsistenciaResidente = {
+  id: string
+  usuario_id: string
+  proyecto_id: string
+  fecha: string
+  hora_entrada: string | null
+  hora_salida: string | null
+  registrado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type ResidenteEnObra = {
+  usuario_id: string
+  nombre: string | null
+  email: string
+  proyecto_id: string
+  proyecto_nombre: string
+  hora_entrada: string | null
+  hora_salida: string | null
 }
 
 export type Asistencia = {
@@ -166,6 +189,7 @@ export type Database = {
           fecha_ingreso?: string
           fecha_baja?: string | null
           activo?: boolean
+          creado_por?: string | null
         }
         Update: {
           proyecto_id?: string
@@ -176,6 +200,7 @@ export type Database = {
           fecha_ingreso?: string
           fecha_baja?: string | null
           activo?: boolean
+          creado_por?: string | null
         }
         Relationships: []
       }
@@ -184,6 +209,25 @@ export type Database = {
         Insert: {
           id?: string
           empleado_id: string
+          proyecto_id: string
+          fecha?: string
+          hora_entrada?: string | null
+          hora_salida?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          hora_entrada?: string | null
+          hora_salida?: string | null
+          fecha?: string
+          registrado_por?: string | null
+        }
+        Relationships: []
+      }
+      asistencia_residentes: {
+        Row: AsistenciaResidente
+        Insert: {
+          id?: string
+          usuario_id: string
           proyecto_id: string
           fecha?: string
           hora_entrada?: string | null
@@ -229,6 +273,10 @@ export type Database = {
       conteo_personal_por_proyecto: {
         Args: Record<PropertyKey, never>
         Returns: ConteoPersonal[]
+      }
+      residentes_en_obra: {
+        Args: { p_fecha: string }
+        Returns: ResidenteEnObra[]
       }
       rol_actual: {
         Args: Record<PropertyKey, never>

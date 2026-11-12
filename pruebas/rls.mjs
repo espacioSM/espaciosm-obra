@@ -97,6 +97,8 @@ try {
   ok('0004 endurecimiento')
   await ejecutar('0005_revision_sprint1.sql')
   ok('0005 revisión')
+  await ejecutar('0006_cuadrillas_jornada_residentes.sql')
+  ok('0006 cuadrillas y jornada')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -115,9 +117,9 @@ try {
       ('${P1}', '${RES}'),
       ('${P1}', '${MED}');
 
-    insert into public.empleados (id, proyecto_id, nombre, puesto, sueldo) values
-      ('${E1}', '${P1}', 'Empleado A', 'Oficial', 600),
-      ('${E2}', '${P2}', 'Empleado B', 'Ayudante', 400);
+    insert into public.empleados (id, proyecto_id, nombre, puesto, sueldo, creado_por) values
+      ('${E1}', '${P1}', 'Empleado A', 'Oficial', 600, '${RES}'),
+      ('${E2}', '${P2}', 'Empleado B', 'Ayudante', 400, '${MED}');
   `)
   ok('datos de prueba')
 
@@ -127,8 +129,8 @@ try {
   else fallo('residente ve solo su obra', `vio ${visibles.rows[0].n}`)
 
   const sueldos = await db.query('select count(*)::int as n from public.empleados')
-  if (sueldos.rows[0].n === 0) ok('residente no lee empleados')
-  else fallo('residente no lee empleados', `vio ${sueldos.rows[0].n}`)
+  if (sueldos.rows[0].n === 1) ok('residente lee solo su cuadrilla')
+  else fallo('residente lee solo su cuadrilla', `vio ${sueldos.rows[0].n}`)
 
   const directorio = await db.query("select * from public.empleados_de_proyecto('" + P1 + "')")
   if (directorio.rows.length === 1 && directorio.rows[0].nombre === 'Empleado A') {
@@ -136,6 +138,20 @@ try {
   } else {
     fallo('directorio de asistencia sin sueldos')
   }
+
+  await db.exec(`
+    insert into public.empleados (proyecto_id, nombre, puesto, sueldo)
+    values ('${P1}', 'Empleado Nuevo', 'Ayudante', 450);
+  `)
+  const propios = await db.query('select count(*)::int as n from public.empleados')
+  if (propios.rows[0].n === 2) ok('residente da de alta en su cuadrilla')
+  else fallo('residente da de alta en su cuadrilla', `vio ${propios.rows[0].n}`)
+
+  const directorioPropio = await db.query(
+    "select * from public.empleados_de_proyecto('" + P1 + "')",
+  )
+  if (directorioPropio.rows.length === 2) ok('directorio solo de su cuadrilla')
+  else fallo('directorio solo de su cuadrilla', `vio ${directorioPropio.rows.length}`)
 
   await esperarError('residente no cambia su rol', () =>
     db.exec(`update public.perfiles set rol = 'admin' where id = '${RES}'`), '42501')
@@ -192,6 +208,49 @@ try {
   } else {
     fallo('correo sincronizado desde auth.users', JSON.stringify(correoSincronizado.rows[0]))
   }
+
+  await como(RES)
+  await db.exec(`
+    insert into public.asistencia_residentes (usuario_id, proyecto_id)
+    values ('${RES}', '${P1}');
+  `)
+  const jornada = await db.query(
+    "select fecha::text, hora_entrada::text, hora_salida::text from public.asistencia_residentes where usuario_id = $1",
+    [RES],
+  )
+  if (jornada.rows[0]?.hora_entrada) ok('residente registra su entrada')
+  else fallo('residente registra su entrada', JSON.stringify(jornada.rows[0]))
+
+  await db.exec(`update public.asistencia_residentes set hora_salida = '12:00' where usuario_id = '${RES}'`)
+  const salidaResidente = await db.query(
+    'select hora_salida::text as h from public.asistencia_residentes where usuario_id = $1',
+    [RES],
+  )
+  if (salidaResidente.rows[0]?.h) ok('residente registra su salida')
+  else fallo('residente registra su salida')
+
+  await esperarError('no se reabre la jornada del residente', () =>
+    db.exec(`update public.asistencia_residentes set hora_salida = '13:00' where usuario_id = '${RES}'`), '42501')
+
+  await como(MED)
+  const empleadosOficina = await db.query('select count(*)::int as n from public.empleados')
+  if (empleadosOficina.rows[0].n === 2) ok('permiso medio consulta al personal de su obra')
+  else fallo('permiso medio consulta al personal de su obra', `vio ${empleadosOficina.rows[0].n}`)
+
+  await esperarError('permiso medio no crea personal', () =>
+    db.exec(`insert into public.empleados (proyecto_id, nombre, sueldo) values ('${P1}', 'Ajeno', 100)`), '42501')
+
+  const intentoEdicion = await db.query(
+    `update public.empleados set sueldo = 999 where id = '${E1}' returning id`,
+  )
+  if (intentoEdicion.rows.length === 0) ok('permiso medio no edita personal')
+  else fallo('permiso medio no edita personal', 'actualizó una fila')
+
+  const residentesOficina = await db.query(
+    "select * from public.residentes_en_obra((now() at time zone 'America/Mexico_City')::date)",
+  )
+  if (residentesOficina.rows.length === 1) ok('oficina ve al residente en obra')
+  else fallo('oficina ve al residente en obra', `vio ${residentesOficina.rows.length}`)
 
   await como(ADMIN)
   await esperarError(
