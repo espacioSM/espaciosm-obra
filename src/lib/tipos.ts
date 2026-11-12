@@ -119,6 +119,32 @@ export type MaterialMovimiento = {
   actualizado_en: string
 }
 
+export type Generador = {
+  id: string
+  proyecto_id: string
+  clave: string | null
+  descripcion: string
+  unidad: string
+  cantidad: number
+  precio_unitario: number
+  activo: boolean
+  creado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type GeneradorAvance = {
+  id: string
+  generador_id: string
+  proyecto_id: string
+  fecha: string
+  cantidad: number
+  nota: string | null
+  registrado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
 export type Asistencia = {
   id: string
   empleado_id: string
@@ -313,6 +339,47 @@ export type Database = {
           cantidad?: number
           costo_unitario?: number
           proveedor?: string | null
+          nota?: string | null
+        }
+        Relationships: []
+      }
+      generadores: {
+        Row: Generador
+        Insert: {
+          id?: string
+          proyecto_id: string
+          clave?: string | null
+          descripcion: string
+          unidad?: string
+          cantidad: number
+          precio_unitario?: number
+          activo?: boolean
+          creado_por?: string | null
+        }
+        Update: {
+          clave?: string | null
+          descripcion?: string
+          unidad?: string
+          cantidad?: number
+          precio_unitario?: number
+          activo?: boolean
+        }
+        Relationships: []
+      }
+      generador_avances: {
+        Row: GeneradorAvance
+        Insert: {
+          id?: string
+          generador_id: string
+          proyecto_id?: string
+          fecha?: string
+          cantidad: number
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          fecha?: string
+          cantidad?: number
           nota?: string | null
         }
         Relationships: []

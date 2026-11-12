@@ -103,6 +103,10 @@ try {
   ok('0007 materiales')
   await ejecutar('0007_materiales.sql')
   ok('0007 materiales repetible')
+  await ejecutar('0008_generadores.sql')
+  ok('0008 generadores')
+  await ejecutar('0008_generadores.sql')
+  ok('0008 generadores repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -293,6 +297,55 @@ try {
     )
   }
 
+  const generadorCreado = await db.query(`
+    insert into public.generadores
+      (proyecto_id, clave, descripcion, unidad, cantidad, precio_unitario)
+    values
+      ('${P1}', 'M-01', 'Muro de block', 'm2', 100, 250)
+    returning id
+  `)
+  const GEN = generadorCreado.rows[0].id
+  await db.query(`
+    insert into public.generador_avances (generador_id, fecha, cantidad, nota)
+    values ('${GEN}', (now() at time zone 'America/Mexico_City')::date, 40, 'Frente A')
+  `)
+  const avanceGenerador = await db.query(
+    'select proyecto_id, cantidad::text, registrado_por from public.generador_avances where generador_id = $1',
+    [GEN],
+  )
+  if (
+    avanceGenerador.rows[0]?.proyecto_id === P1 &&
+    avanceGenerador.rows[0]?.registrado_por === MED
+  ) {
+    ok('oficina registra avance de generador')
+  } else {
+    fallo('oficina registra avance de generador', JSON.stringify(avanceGenerador.rows[0]))
+  }
+
+  await esperarError('avance no supera lo contratado', () =>
+    db.exec(`insert into public.generador_avances (generador_id, cantidad) values ('${GEN}', 70)`), '23514')
+
+  await como(RES)
+  const generadoresResidente = await db.query('select count(*)::int as n from public.generadores')
+  const avancesResidente = await db.query(
+    'select count(*)::int as n from public.generador_avances',
+  )
+  if (generadoresResidente.rows[0].n === 1 && avancesResidente.rows[0].n === 1) {
+    ok('residente consulta generadores de su obra')
+  } else {
+    fallo(
+      'residente consulta generadores de su obra',
+      `generadores ${generadoresResidente.rows[0].n}, avances ${avancesResidente.rows[0].n}`,
+    )
+  }
+
+  await esperarError('residente no crea generadores', () =>
+    db.exec(`insert into public.generadores (proyecto_id, descripcion, cantidad) values ('${P1}', 'Ajeno', 1)`), '42501')
+
+  await esperarError('residente no crea avances', () =>
+    db.exec(`insert into public.generador_avances (generador_id, cantidad) values ('${GEN}', 1)`), '42501')
+
+  await como(MED)
   await esperarError('permiso medio no crea personal', () =>
     db.exec(`insert into public.empleados (proyecto_id, nombre, sueldo) values ('${P1}', 'Ajeno', 100)`), '42501')
 

@@ -6,6 +6,8 @@ import type {
   DirectorioEmpleado,
   Empleado,
   EstadoProyecto,
+  Generador,
+  GeneradorAvance,
   Material,
   MaterialMovimiento,
   Perfil,
@@ -394,6 +396,86 @@ export async function crearMovimientoMaterial(
     cantidad: datos.cantidad,
     costo_unitario: datos.costoUnitario,
     proveedor: datos.proveedor,
+    nota: datos.nota,
+    registrado_por: datos.usuarioId ?? undefined,
+  })
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Generadores de obra
+// -----------------------------------------------------------------------------
+
+export type DatosGenerador = {
+  proyectoId: string
+  clave: string | null
+  descripcion: string
+  unidad: string
+  cantidad: number
+  precioUnitario: number
+}
+
+export type DatosAvanceGenerador = {
+  generadorId: string
+  fecha: string
+  cantidad: number
+  nota: string | null
+  usuarioId: string | null
+}
+
+export async function listarGeneradores(proyectoId: string): Promise<Generador[]> {
+  const { data, error } = await supabase
+    .from('generadores')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .eq('activo', true)
+    .order('clave', { ascending: true, nullsFirst: false })
+    .order('descripcion')
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearGenerador(datos: DatosGenerador): Promise<Generador> {
+  const { data, error } = await supabase
+    .from('generadores')
+    .insert({
+      proyecto_id: datos.proyectoId,
+      clave: datos.clave,
+      descripcion: datos.descripcion,
+      unidad: datos.unidad,
+      cantidad: datos.cantidad,
+      precio_unitario: datos.precioUnitario,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function listarAvancesGenerador(
+  proyectoId: string,
+): Promise<GeneradorAvance[]> {
+  const { data, error } = await supabase
+    .from('generador_avances')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearAvanceGenerador(
+  datos: DatosAvanceGenerador,
+): Promise<void> {
+  const { error } = await supabase.from('generador_avances').insert({
+    generador_id: datos.generadorId,
+    fecha: datos.fecha,
+    cantidad: datos.cantidad,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
