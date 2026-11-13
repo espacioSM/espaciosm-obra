@@ -207,6 +207,10 @@ try {
   ok('0034 presupuesto y cobros')
   await ejecutar('0034_presupuesto_cobros.sql')
   ok('0034 presupuesto y cobros repetible')
+  await ejecutar('0035_programa_obra.sql')
+  ok('0035 programa de obra')
+  await ejecutar('0035_programa_obra.sql')
+  ok('0035 programa de obra repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -862,6 +866,43 @@ try {
     values ('${P1}', 'anticipo', 20000)
   `)
   ok('admin registra presupuesto y cobro')
+
+  const actividadCreada = await db.query(`
+    insert into public.programa_actividades
+      (proyecto_id, generador_id, nombre, cantidad, unidad, rendimiento,
+       fecha_inicio, fecha_fin)
+    values
+      ('${P1}', '${GEN}', 'Actividad de prueba', 10, 'm2', 5,
+       (now() at time zone 'America/Mexico_City')::date,
+       (now() at time zone 'America/Mexico_City')::date + 1)
+    returning id
+  `)
+  const ACTIVIDAD = actividadCreada.rows[0].id
+  ok('admin crea actividad de programa')
+
+  await como(MED)
+  const actividadOficina = await db.query(
+    'select count(*)::int as n from public.programa_actividades',
+  )
+  if (actividadOficina.rows[0].n === 1) ok('oficina consulta programa')
+  else fallo('oficina consulta programa', `vio ${actividadOficina.rows[0].n}`)
+
+  await como(RES)
+  const actividadResidente = await db.query(
+    'select count(*)::int as n from public.programa_actividades',
+  )
+  if (actividadResidente.rows[0].n === 1) ok('residente consulta programa')
+  else fallo('residente consulta programa', `vio ${actividadResidente.rows[0].n}`)
+
+  await esperarError('residente no crea programa', () =>
+    db.exec(`
+      insert into public.programa_actividades
+        (proyecto_id, nombre, cantidad, unidad, rendimiento, fecha_inicio, fecha_fin)
+      values ('${P1}', 'Ajeno', 1, 'm2', 1, current_date, current_date)
+    `), '42501')
+
+  await como(ADMIN)
+  await db.query(`delete from public.programa_actividades where id = '${ACTIVIDAD}'`)
 
   await como(MED)
   const pagosOficina = await db.query('select count(*)::int as n from public.pagos')

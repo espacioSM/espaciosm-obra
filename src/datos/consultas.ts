@@ -25,6 +25,7 @@ import type {
   PartidaDisponible,
   Pago,
   Presupuesto,
+  ProgramaActividad,
   Proyecto,
   ProyectoMiembro,
   ResidenteEnObra,
@@ -664,6 +665,7 @@ export type DatosGenerador = {
   unidad: string
   cantidad: number
   precioUnitario: number
+  rendimiento: number
 }
 
 export type DatosAvanceGenerador = {
@@ -709,6 +711,7 @@ export async function crearGenerador(datos: DatosGenerador): Promise<Generador> 
       unidad: datos.unidad,
       cantidad: datos.cantidad,
       precio_unitario: datos.precioUnitario,
+      rendimiento: datos.rendimiento,
     })
     .select('*')
     .single()
@@ -1093,5 +1096,82 @@ export async function crearCobroCliente(datos: DatosCobroCliente): Promise<void>
     nota: datos.nota,
   })
 
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Programa de obra
+// -----------------------------------------------------------------------------
+
+export type DatosActividadPrograma = {
+  proyectoId: string
+  generadorId: string | null
+  nombre: string
+  cantidad: number
+  unidad: string
+  rendimiento: number
+  fechaInicio: string
+  fechaFin: string
+  dependeDeId: string | null
+  orden: number
+}
+
+export async function listarActividadesPrograma(
+  proyectoId: string,
+): Promise<ProgramaActividad[]> {
+  const { data, error } = await supabase
+    .from('programa_actividades')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('orden')
+    .order('fecha_inicio')
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearActividadPrograma(
+  datos: DatosActividadPrograma,
+): Promise<void> {
+  const { error } = await supabase.from('programa_actividades').insert({
+    proyecto_id: datos.proyectoId,
+    generador_id: datos.generadorId,
+    nombre: datos.nombre,
+    cantidad: datos.cantidad,
+    unidad: datos.unidad,
+    rendimiento: datos.rendimiento,
+    fecha_inicio: datos.fechaInicio,
+    fecha_fin: datos.fechaFin,
+    depende_de_id: datos.dependeDeId,
+    orden: datos.orden,
+  })
+
+  if (error) throw error
+}
+
+export async function actualizarActividadPrograma(
+  id: string,
+  datos: DatosActividadPrograma,
+): Promise<void> {
+  const { error } = await supabase
+    .from('programa_actividades')
+    .update({
+      generador_id: datos.generadorId,
+      nombre: datos.nombre,
+      cantidad: datos.cantidad,
+      unidad: datos.unidad,
+      rendimiento: datos.rendimiento,
+      fecha_inicio: datos.fechaInicio,
+      fecha_fin: datos.fechaFin,
+      depende_de_id: datos.dependeDeId,
+      orden: datos.orden,
+    })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
+export async function eliminarActividadPrograma(id: string): Promise<void> {
+  const { error } = await supabase.from('programa_actividades').delete().eq('id', id)
   if (error) throw error
 }

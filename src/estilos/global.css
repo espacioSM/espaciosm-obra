@@ -1577,6 +1577,20 @@ a {
   object-fit: cover;
 }
 
+.gantt {
+  min-width: 110px;
+  height: 12px;
+  border-radius: 999px;
+  background: #2a2a26;
+  overflow: hidden;
+}
+
+.gantt__barra {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--amarillo);
+}
+
 .fotos-tabla {
   display: flex;
   gap: 6px;

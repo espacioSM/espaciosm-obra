@@ -61,6 +61,7 @@ export function Generadores() {
   const [unidad, setUnidad] = useState('m2')
   const [cantidad, setCantidad] = useState('')
   const [precio, setPrecio] = useState('')
+  const [rendimiento, setRendimiento] = useState('')
 
   const [generadorId, setGeneradorId] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
@@ -158,6 +159,15 @@ export function Generadores() {
       return
     }
 
+    const rendimientoNumero = Number(rendimiento)
+    if (!Number.isFinite(rendimientoNumero) || rendimientoNumero <= 0) {
+      setAviso({
+        tipo: 'error',
+        texto: 'El rendimiento debe ser mayor que cero (unidad por día).',
+      })
+      return
+    }
+
     setGuardandoGenerador(true)
     setAviso(null)
 
@@ -169,11 +179,13 @@ export function Generadores() {
         unidad: unidad.trim() === '' ? 'pieza' : unidad.trim(),
         cantidad: Math.round(cantidadNumero * 100) / 100,
         precioUnitario: Math.round(precioNumero * 100) / 100,
+        rendimiento: Math.round(rendimientoNumero * 100) / 100,
       })
       setClave('')
       setDescripcion('')
       setCantidad('')
       setPrecio('')
+      setRendimiento('')
       setGeneradorId(generador.id)
       consulta.recargar()
       setAviso({ tipo: 'exito', texto: 'Concepto agregado al generador.' })
@@ -531,6 +543,20 @@ export function Generadores() {
                           value={precio}
                           onChange={(evento) => setPrecio(evento.target.value)}
                           placeholder="0.00"
+                        />
+                      </div>
+
+                      <div className="campo">
+                        <label className="campo__etiqueta" htmlFor="gen-rendimiento">
+                          Rendimiento (unidad/día)
+                        </label>
+                        <input
+                          id="gen-rendimiento"
+                          className="campo__control"
+                          inputMode="decimal"
+                          value={rendimiento}
+                          onChange={(evento) => setRendimiento(evento.target.value)}
+                          placeholder="Ej. 12"
                         />
                       </div>
 
@@ -948,6 +974,7 @@ export function Generadores() {
                           <th scope="col">Unidad</th>
                           <th scope="col">Contratado</th>
                           <th scope="col">P. unitario</th>
+                          <th scope="col">Rendimiento</th>
                           <th scope="col">Importe</th>
                           <th scope="col">Ejecutado</th>
                           <th scope="col">Saldo</th>
@@ -966,6 +993,11 @@ export function Generadores() {
                             <td>{generador.unidad}</td>
                             <td>{Number(generador.cantidad).toFixed(2)}</td>
                             <td>{formatearMoneda(Number(generador.precio_unitario))}</td>
+                            <td>
+                              {Number(generador.rendimiento) > 0
+                                ? `${Number(generador.rendimiento).toFixed(2)} ${generador.unidad}/día`
+                                : '—'}
+                            </td>
                             <td>{formatearMoneda(importe)}</td>
                             <td>{ejecutado.toFixed(2)}</td>
                             <td>

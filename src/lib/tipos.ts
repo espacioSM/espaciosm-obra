@@ -150,7 +150,25 @@ export type Generador = {
   unidad: string
   cantidad: number
   precio_unitario: number
+  rendimiento: number
   activo: boolean
+  creado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type ProgramaActividad = {
+  id: string
+  proyecto_id: string
+  generador_id: string | null
+  nombre: string
+  cantidad: number
+  unidad: string
+  rendimiento: number
+  fecha_inicio: string
+  fecha_fin: string
+  depende_de_id: string | null
+  orden: number
   creado_por: string | null
   creado_en: string
   actualizado_en: string
@@ -580,6 +598,35 @@ export type Database = {
         }
         Relationships: []
       }
+      programa_actividades: {
+        Row: ProgramaActividad
+        Insert: {
+          id?: string
+          proyecto_id: string
+          generador_id?: string | null
+          nombre: string
+          cantidad?: number
+          unidad?: string
+          rendimiento: number
+          fecha_inicio: string
+          fecha_fin: string
+          depende_de_id?: string | null
+          orden?: number
+          creado_por?: string | null
+        }
+        Update: {
+          generador_id?: string | null
+          nombre?: string
+          cantidad?: number
+          unidad?: string
+          rendimiento?: number
+          fecha_inicio?: string
+          fecha_fin?: string
+          depende_de_id?: string | null
+          orden?: number
+        }
+        Relationships: []
+      }
       generadores: {
         Row: Generador
         Insert: {
@@ -590,6 +637,7 @@ export type Database = {
           unidad?: string
           cantidad: number
           precio_unitario?: number
+          rendimiento?: number
           activo?: boolean
           creado_por?: string | null
         }
@@ -599,6 +647,7 @@ export type Database = {
           unidad?: string
           cantidad?: number
           precio_unitario?: number
+          rendimiento?: number
           activo?: boolean
         }
         Relationships: []
