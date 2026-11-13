@@ -548,7 +548,7 @@ export function Generadores() {
 
                       <div className="campo">
                         <label className="campo__etiqueta" htmlFor="gen-rendimiento">
-                          Rendimiento (unidad/día)
+                          Rendimiento (unidades por día)
                         </label>
                         <input
                           id="gen-rendimiento"
@@ -558,6 +558,10 @@ export function Generadores() {
                           onChange={(evento) => setRendimiento(evento.target.value)}
                           placeholder="Ej. 12"
                         />
+                        <span className="campo__ayuda">
+                          Cuántas {unidad.trim() || 'unidades'} se ejecutan en un día. No
+                          escribas días.
+                        </span>
                       </div>
 
                       <div className="acciones campo--ancho">

@@ -315,6 +315,15 @@ export function Programa() {
   const minimo = fechas.length > 0 ? Math.min(...fechas) : 0
   const maximo = fechas.length > 0 ? Math.max(...fechas) : 0
   const rango = Math.max(1, maximo - minimo)
+  const cantidadVista = Number(cantidad)
+  const rendimientoVista = Number(rendimiento)
+  const diasVista =
+    Number.isFinite(cantidadVista) &&
+    cantidadVista > 0 &&
+    Number.isFinite(rendimientoVista) &&
+    rendimientoVista > 0
+      ? Math.max(1, Math.ceil(cantidadVista / rendimientoVista))
+      : 0
 
   return (
     <div className="pagina">
@@ -459,7 +468,7 @@ export function Programa() {
 
                     <div className="campo">
                       <label className="campo__etiqueta" htmlFor="programa-rendimiento">
-                        Rendimiento (unidad/día)
+                        Rendimiento ({unidad.trim() || 'unidad'}/día)
                       </label>
                       <input
                         id="programa-rendimiento"
@@ -467,7 +476,12 @@ export function Programa() {
                         inputMode="decimal"
                         value={rendimiento}
                         onChange={(evento) => setRendimiento(evento.target.value)}
+                        placeholder="Ej. 12"
                       />
+                      <span className="campo__ayuda">
+                        Cuántas {unidad.trim() || 'unidades'} se hacen en un día. No
+                        escribas días.
+                      </span>
                     </div>
 
                     <div className="campo">
@@ -504,6 +518,14 @@ export function Programa() {
                             </option>
                           ))}
                       </select>
+                    </div>
+
+                    <div className="acciones campo--ancho">
+                      <span className="seccion__nota">
+                        {diasVista > 0
+                          ? `Duración estimada: ${diasVista} día(s) hábiles (${cantidadVista.toFixed(2)} ${unidad.trim() || 'unidad'} ÷ ${rendimientoVista.toFixed(2)} por día).`
+                          : 'Captura cantidad y rendimiento para calcular la duración.'}
+                      </span>
                     </div>
 
                     <div className="acciones campo--ancho">
