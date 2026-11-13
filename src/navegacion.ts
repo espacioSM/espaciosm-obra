@@ -42,7 +42,7 @@ export const NAVEGACION: GrupoNavegacion[] = [
     titulo: 'Registro',
     items: [
       { ruta: '/bitacora', etiqueta: 'Bitácora', modulo: 'bitacora' },
-      { ruta: '/reportes', etiqueta: 'Reportes', modulo: 'reportes', sprint: 5 },
+      { ruta: '/reportes', etiqueta: 'Reportes', modulo: 'reportes' },
     ],
   },
   {

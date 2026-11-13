@@ -1582,3 +1582,57 @@ a {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+@media print {
+  body,
+  .app,
+  .cuerpo,
+  .contenido,
+  .pagina {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  .barra,
+  .lateral,
+  .pagina__cabecera .acciones,
+  .boton {
+    display: none !important;
+  }
+
+  .contenido {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .tarjeta,
+  .kpi,
+  .tabla-marco {
+    background: #ffffff !important;
+    border-color: #bbbbbb !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+  }
+
+  .tabla th,
+  .tabla td {
+    color: #111111 !important;
+    border-color: #bbbbbb !important;
+  }
+
+  .subtitulo,
+  .seccion__nota,
+  .celda-nota,
+  .meta-etiqueta,
+  .kpi__nota,
+  .kpi__etiqueta {
+    color: #444444 !important;
+  }
+
+  .rejilla-dos,
+  .rejilla-kpi {
+    break-inside: avoid;
+  }
+}
