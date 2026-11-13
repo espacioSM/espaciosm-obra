@@ -12,6 +12,7 @@ import { Asistencia } from './paginas/Asistencia'
 import { Materiales } from './paginas/Materiales'
 import { Generadores } from './paginas/Generadores'
 import { Estimaciones } from './paginas/Estimaciones'
+import { Solicitudes } from './paginas/Solicitudes'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="materiales" element={<Materiales />} />
               <Route path="generadores" element={<Generadores />} />
               <Route path="estimaciones" element={<Estimaciones />} />
+              <Route path="solicitudes" element={<Solicitudes />} />
               <Route path="usuarios" element={<Usuarios />} />
               <Route path="cuenta" element={<Cuenta />} />
               <Route path=":modulo" element={<Pendiente />} />

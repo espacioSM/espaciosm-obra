@@ -111,6 +111,10 @@ try {
   ok('0009 estimaciones')
   await ejecutar('0009_estimaciones.sql')
   ok('0009 estimaciones repetible')
+  await ejecutar('0010_solicitudes.sql')
+  ok('0010 solicitudes')
+  await ejecutar('0010_solicitudes.sql')
+  ok('0010 solicitudes repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -443,6 +447,58 @@ try {
   if (estadoAdmin.rows[0]?.estado === 'enviada') ok('admin cambia estado de estimación')
   else fallo('admin cambia estado de estimación', JSON.stringify(estadoAdmin.rows[0]))
 
+  await como(RES)
+  const solicitudCreada = await db.query(`
+    insert into public.solicitudes_recursos
+      (proyecto_id, tipo, descripcion, cantidad, unidad, prioridad)
+    values
+      ('${P1}', 'material', 'Cemento para colado', 10, 'bulto', 'alta')
+    returning id
+  `)
+  const SOL = solicitudCreada.rows[0].id
+  const solicitudesResidente = await db.query(
+    "select * from public.listar_solicitudes('" + P1 + "')",
+  )
+  if (
+    solicitudesResidente.rows.length === 1 &&
+    solicitudesResidente.rows[0].estado === 'pendiente'
+  ) {
+    ok('residente crea y ve su solicitud')
+  } else {
+    fallo('residente crea y ve su solicitud', JSON.stringify(solicitudesResidente.rows))
+  }
+
+  await esperarError('residente no responde solicitudes', () =>
+    db.exec(`select public.responder_solicitud('${SOL}', 'aprobada', 'No')`), '42501')
+
+  await como(MED)
+  const solicitudesOficina = await db.query(
+    "select * from public.listar_solicitudes('" + P1 + "')",
+  )
+  if (solicitudesOficina.rows.length === 1) ok('oficina ve solicitudes de la obra')
+  else fallo('oficina ve solicitudes de la obra', `vio ${solicitudesOficina.rows.length}`)
+
+  await db.query(
+    `select public.responder_solicitud('${SOL}', 'aprobada', 'Autorizado')`,
+  )
+  const respuestaOficina = await db.query(
+    'select estado, respuesta from public.solicitudes_recursos where id = $1',
+    [SOL],
+  )
+  if (respuestaOficina.rows[0]?.estado === 'aprobada') ok('oficina aprueba solicitud')
+  else fallo('oficina aprueba solicitud', JSON.stringify(respuestaOficina.rows[0]))
+
+  await como(RES)
+  const solicitudAprobada = await db.query(
+    "select * from public.listar_solicitudes('" + P1 + "')",
+  )
+  if (solicitudAprobada.rows[0]?.estado === 'aprobada') {
+    ok('residente ve la respuesta')
+  } else {
+    fallo('residente ve la respuesta', JSON.stringify(solicitudAprobada.rows[0]))
+  }
+
+  await como(ADMIN)
   await esperarError(
     'admin no se degrada a sí mismo',
     () => db.exec(`update public.perfiles set rol = 'residente' where id = '${ADMIN}'`),

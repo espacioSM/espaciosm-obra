@@ -19,7 +19,11 @@ import type {
   ProyectoMiembro,
   ResidenteEnObra,
   Rol,
+  SolicitudRecurso,
   TipoMovimientoMaterial,
+  TipoSolicitud,
+  PrioridadSolicitud,
+  EstadoSolicitud,
 } from '../lib/tipos'
 
 // -----------------------------------------------------------------------------
@@ -545,6 +549,59 @@ export async function actualizarEstadoEstimacion(
     .from('estimaciones')
     .update({ estado })
     .eq('id', estimacionId)
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Solicitudes de recursos
+// -----------------------------------------------------------------------------
+
+export type DatosSolicitud = {
+  proyectoId: string
+  tipo: TipoSolicitud
+  descripcion: string
+  cantidad: number | null
+  unidad: string | null
+  prioridad: PrioridadSolicitud
+  fechaRequerida: string | null
+  notas: string | null
+}
+
+export async function listarSolicitudes(proyectoId: string): Promise<SolicitudRecurso[]> {
+  const { data, error } = await supabase.rpc('listar_solicitudes', {
+    p_proyecto_id: proyectoId,
+  })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearSolicitud(datos: DatosSolicitud): Promise<void> {
+  const { error } = await supabase.from('solicitudes_recursos').insert({
+    proyecto_id: datos.proyectoId,
+    tipo: datos.tipo,
+    descripcion: datos.descripcion,
+    cantidad: datos.cantidad,
+    unidad: datos.unidad,
+    prioridad: datos.prioridad,
+    fecha_requerida: datos.fechaRequerida,
+    notas: datos.notas,
+  })
+
+  if (error) throw error
+}
+
+export async function responderSolicitud(
+  solicitudId: string,
+  estado: EstadoSolicitud,
+  respuesta: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('responder_solicitud', {
+    p_solicitud_id: solicitudId,
+    p_estado: estado,
+    p_respuesta: respuesta,
+  })
 
   if (error) throw error
 }

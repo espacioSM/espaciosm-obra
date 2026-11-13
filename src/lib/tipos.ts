@@ -174,6 +174,29 @@ export type EstimacionPartida = {
   creado_en: string
 }
 
+export type TipoSolicitud = 'material' | 'personal' | 'equipo' | 'otro'
+export type PrioridadSolicitud = 'baja' | 'media' | 'alta'
+export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada' | 'atendida'
+
+export type SolicitudRecurso = {
+  id: string
+  proyecto_id: string
+  solicitado_por: string
+  solicitante_nombre: string | null
+  solicitante_email: string
+  tipo: TipoSolicitud
+  descripcion: string
+  cantidad: number | null
+  unidad: string | null
+  prioridad: PrioridadSolicitud
+  fecha_requerida: string | null
+  notas: string | null
+  estado: EstadoSolicitud
+  respuesta: string | null
+  creado_en: string
+  respondido_en: string | null
+}
+
 export type Asistencia = {
   id: string
   empleado_id: string
@@ -454,6 +477,35 @@ export type Database = {
         }
         Relationships: []
       }
+      solicitudes_recursos: {
+        Row: Omit<SolicitudRecurso, 'solicitante_nombre' | 'solicitante_email'>
+        Insert: {
+          id?: string
+          proyecto_id: string
+          solicitado_por?: string
+          tipo?: TipoSolicitud
+          descripcion: string
+          cantidad?: number | null
+          unidad?: string | null
+          prioridad?: PrioridadSolicitud
+          fecha_requerida?: string | null
+          notas?: string | null
+          estado?: EstadoSolicitud
+          respuesta?: string | null
+        }
+        Update: {
+          tipo?: TipoSolicitud
+          descripcion?: string
+          cantidad?: number | null
+          unidad?: string | null
+          prioridad?: PrioridadSolicitud
+          fecha_requerida?: string | null
+          notas?: string | null
+          estado?: EstadoSolicitud
+          respuesta?: string | null
+        }
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -501,6 +553,18 @@ export type Database = {
         }
         Returns: string
       }
+      listar_solicitudes: {
+        Args: { p_proyecto_id: string }
+        Returns: SolicitudRecurso[]
+      }
+      responder_solicitud: {
+        Args: {
+          p_solicitud_id: string
+          p_estado: EstadoSolicitud
+          p_respuesta: string
+        }
+        Returns: undefined
+      }
       rol_actual: {
         Args: Record<PropertyKey, never>
         Returns: Rol | null
@@ -524,6 +588,9 @@ export type Database = {
       periodo_pago: PeriodoPago
       tipo_movimiento_material: TipoMovimientoMaterial
       estado_estimacion: EstadoEstimacion
+      tipo_solicitud: TipoSolicitud
+      prioridad_solicitud: PrioridadSolicitud
+      estado_solicitud: EstadoSolicitud
       modulo_sistema: Modulo
       accion_sistema: Accion
     }
