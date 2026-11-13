@@ -702,6 +702,46 @@ export async function listarGeneradores(proyectoId: string): Promise<Generador[]
 }
 
 export async function crearGenerador(datos: DatosGenerador): Promise<Generador> {
+  if (datos.clave) {
+    const { data: existente, error: errorExistente } = await supabase
+      .from('generadores')
+      .select('id, activo')
+      .eq('proyecto_id', datos.proyectoId)
+      .eq('clave', datos.clave)
+      .maybeSingle()
+
+    if (errorExistente) throw errorExistente
+
+    if (existente) {
+      if (existente.activo) {
+        throw new Error('Ya existe un concepto activo con esa clave.')
+      }
+
+      const { error: errorReactivar } = await supabase
+        .from('generadores')
+        .update({
+          descripcion: datos.descripcion,
+          unidad: datos.unidad,
+          cantidad: datos.cantidad,
+          precio_unitario: datos.precioUnitario,
+          rendimiento: datos.rendimiento,
+          activo: true,
+        })
+        .eq('id', existente.id)
+
+      if (errorReactivar) throw errorReactivar
+
+      const { data, error } = await supabase
+        .from('generadores')
+        .select('*')
+        .eq('id', existente.id)
+        .single()
+
+      if (error) throw error
+      return data
+    }
+  }
+
   const { data, error } = await supabase
     .from('generadores')
     .insert({

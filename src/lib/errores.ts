@@ -35,7 +35,13 @@ export function mensajeDeError(error: unknown): string {
   if (codigo === '42501' || texto.includes('row-level security')) {
     return 'No tienes permiso para esta acción. Si deberías tenerlo, revisa tu asignación al proyecto con el administrador.'
   }
+  if (texto.includes('ya existe un concepto activo')) {
+    return 'Ya existe un concepto activo con esa clave. Edítalo o usa otra clave.'
+  }
   if (codigo === '23505' || texto.includes('duplicate key')) {
+    if (texto.includes('generadores_proyecto_clave')) {
+      return 'Ya existe un concepto con esa clave en esta obra. Revisa la lista o usa otra clave.'
+    }
     return 'Ya existe un registro con esos datos. Revisa la lista antes de volver a guardar.'
   }
   if (codigo === '23503' || texto.includes('foreign key')) {
