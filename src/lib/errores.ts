@@ -41,6 +41,18 @@ export function mensajeDeError(error: unknown): string {
   if (codigo === '23503' || texto.includes('foreign key')) {
     return 'El registro depende de información que ya no existe o no está asignada. Actualiza la pantalla e intenta de nuevo.'
   }
+  if (texto.includes('no hay avances disponibles')) {
+    return 'No hay avances disponibles para las partidas seleccionadas. Actualiza los avances aprobados o verifica que sigan sin estimar.'
+  }
+  if (texto.includes('selecciona al menos una partida')) {
+    return 'Selecciona al menos una partida antes de enviar la solicitud.'
+  }
+  if (texto.includes('la cantidad de baja supera')) {
+    return 'La cantidad de baja supera el inventario disponible.'
+  }
+  if (texto.includes('el avance excede')) {
+    return 'El avance excede la cantidad contratada del generador.'
+  }
   if (codigo === '23514' || texto.includes('violates check constraint')) {
     return 'Los datos no cumplen una regla de la obra (por ejemplo, fechas u horas incoherentes).'
   }
