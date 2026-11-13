@@ -4,16 +4,27 @@ import { useDatos } from '../lib/useDatos'
 import {
   crearMaterial,
   crearMovimientoMaterial,
+  listarCatalogoMateriales,
   listarMateriales,
   listarMovimientosMaterial,
   listarProyectos,
 } from '../datos/consultas'
-import type { TipoMovimientoMaterial } from '../lib/tipos'
+import type { MaterialCatalogo, TipoMovimientoMaterial } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
 import { Insignia } from '../componentes/Insignias'
+
+const CATEGORIA: Record<string, string> = {
+  cimentacion_y_concreto: 'Cimentación y concreto',
+  acero_y_refuerzo: 'Acero y refuerzo',
+  albanileria: 'Albañilería',
+  cimbra_y_madera: 'Cimbra y madera',
+  acabados: 'Acabados',
+  instalacion_hidrosanitaria: 'Hidrosanitaria',
+  instalacion_electrica: 'Eléctrica',
+}
 
 export function Materiales() {
   const { sesion, permisos } = useSesion()
@@ -39,8 +50,16 @@ export function Materiales() {
 
   const materiales = consulta.datos?.materiales ?? []
   const movimientos = consulta.datos?.movimientos ?? []
+  const catalogoConsulta = useDatos(listarCatalogoMateriales, [])
+  const catalogo = catalogoConsulta.datos ?? []
   const puedeVer = permisos.materiales?.ver === true
   const puedeCrear = permisos.materiales?.crear === true
+
+  const [busquedaCatalogo, setBusquedaCatalogo] = useState('')
+  const [agregandoCatalogo, setAgregandoCatalogo] = useState<string | null>(null)
+  const codigosExistentes = new Set(
+    materiales.map((material) => material.catalogo_id).filter(Boolean),
+  )
 
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
     null,
@@ -109,6 +128,47 @@ export function Materiales() {
   const stockBajo = stock.filter(
     ({ material, existencia }) => existencia <= Number(material.stock_minimo),
   ).length
+
+  const catalogoFiltrado = catalogo.filter((material) => {
+    const texto = busquedaCatalogo.trim().toLowerCase()
+    if (texto === '') return true
+    return [
+      material.nombre,
+      material.especificacion ?? '',
+      material.categoria,
+      material.codigo,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(texto)
+  })
+
+  async function agregarDesdeCatalogo(material: MaterialCatalogo) {
+    if (codigosExistentes.has(material.codigo)) return
+    setAgregandoCatalogo(material.codigo)
+    setAviso(null)
+
+    try {
+      const creado = await crearMaterial({
+        proyectoId,
+        nombre: material.nombre,
+        unidad: material.unidad,
+        costoUnitario: Number(material.precio_referencia ?? 0),
+        stockMinimo: 0,
+        catalogoId: material.codigo,
+        especificacion: material.especificacion,
+        presentacion: material.presentacion,
+      })
+      setMaterialId(creado.id)
+      setCostoMovimiento(String(creado.costo_unitario))
+      consulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Material agregado desde el catálogo.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setAgregandoCatalogo(null)
+    }
+  }
 
   async function guardarMaterial(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -288,6 +348,112 @@ export function Materiales() {
               <p className="kpi__valor">{stockBajo}</p>
               <p className="kpi__nota">Materiales en o bajo el mínimo</p>
             </article>
+          </section>
+
+          <section className="tarjeta tarjeta--plana">
+            <div className="seccion__cabecera">
+              <div>
+                <h2 className="seccion__titulo">Catálogo de proveedor</h2>
+                <p className="seccion__nota">
+                  Materiales comunes precargados. El precio es de referencia y se llena
+                  automático al agregarlos; el enlace abre Home Depot.
+                </p>
+              </div>
+              <span className="seccion__nota">
+                {catalogoFiltrado.length} de {catalogo.length}
+              </span>
+            </div>
+
+            <div className="campo">
+              <label className="campo__etiqueta" htmlFor="catalogo-busqueda">
+                Buscar material
+              </label>
+              <input
+                id="catalogo-busqueda"
+                className="campo__control"
+                type="search"
+                value={busquedaCatalogo}
+                onChange={(evento) => setBusquedaCatalogo(evento.target.value)}
+                placeholder="Cemento, block, varilla, pintura…"
+              />
+            </div>
+
+            {catalogoFiltrado.length === 0 ? (
+              <Vacio titulo="Sin coincidencias">
+                Prueba con otro nombre, categoría o código.
+              </Vacio>
+            ) : (
+              <div className="tabla-marco">
+                <table className="tabla">
+                  <thead>
+                    <tr>
+                      <th scope="col">Material</th>
+                      <th scope="col">Unidad</th>
+                      <th scope="col">Precio referencia</th>
+                      <th scope="col">Proveedor</th>
+                      <th scope="col" aria-label="Acciones" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catalogoFiltrado.map((material) => {
+                      const existente = codigosExistentes.has(material.codigo)
+                      return (
+                        <tr key={material.codigo}>
+                          <td>
+                            <span className="celda-principal">{material.nombre}</span>
+                            <span className="celda-nota">
+                              {CATEGORIA[material.categoria] ?? material.categoria}
+                              {material.especificacion
+                                ? ` · ${material.especificacion}`
+                                : ''}
+                              {material.presentacion
+                                ? ` · ${material.presentacion}`
+                                : ''}
+                            </span>
+                          </td>
+                          <td>{material.unidad}</td>
+                          <td>
+                            {material.precio_referencia === null
+                              ? 'Sin precio'
+                              : formatearMoneda(Number(material.precio_referencia))}
+                          </td>
+                          <td>
+                            {material.url ? (
+                              <a
+                                className="boton boton--tenue"
+                                href={material.url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Home Depot
+                              </a>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>
+                            {existente ? (
+                              <Insignia tono="tenue">Ya está</Insignia>
+                            ) : (
+                              <button
+                                type="button"
+                                className="boton"
+                                disabled={agregandoCatalogo !== null}
+                                onClick={() => void agregarDesdeCatalogo(material)}
+                              >
+                                {agregandoCatalogo === material.codigo
+                                  ? 'Agregando…'
+                                  : 'Agregar'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           {consulta.cargando && !consulta.datos ? (
@@ -562,6 +728,9 @@ export function Materiales() {
                             <tr key={material.id}>
                               <td>
                                 <span className="celda-principal">{material.nombre}</span>
+                                <span className="celda-nota">
+                                  {material.especificacion ?? material.unidad}
+                                </span>
                               </td>
                               <td>{material.unidad}</td>
                               <td>{existencia.toFixed(2)}</td>

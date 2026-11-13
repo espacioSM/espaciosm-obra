@@ -115,6 +115,10 @@ try {
   ok('0010 solicitudes')
   await ejecutar('0010_solicitudes.sql')
   ok('0010 solicitudes repetible')
+  await ejecutar('0011_catalogo_materiales.sql')
+  ok('0011 catálogo')
+  await ejecutar('0011_catalogo_materiales.sql')
+  ok('0011 catálogo repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -497,6 +501,35 @@ try {
   } else {
     fallo('residente ve la respuesta', JSON.stringify(solicitudAprobada.rows[0]))
   }
+
+  await como(ADMIN)
+  const catalogo = await db.query('select count(*)::int as n from public.catalogo_materiales')
+  if (catalogo.rows[0].n === 42) ok('catálogo de materiales precargado')
+  else fallo('catálogo de materiales precargado', `vio ${catalogo.rows[0].n}`)
+
+  await db.query(`
+    insert into public.materiales
+      (proyecto_id, catalogo_id, nombre, especificacion, unidad, costo_unitario)
+    values
+      ('${P1}', 'ALB-001', 'Block de concreto', '15 x 20 x 40 cm', 'pieza', 21.4),
+      ('${P1}', 'ALB-002', 'Block de concreto', '12 x 20 x 40 cm', 'pieza', 15)
+  `)
+  const blocks = await db.query(
+    "select count(*)::int as n from public.materiales where proyecto_id = $1 and catalogo_id in ('ALB-001','ALB-002')",
+    [P1],
+  )
+  if (blocks.rows[0].n === 2) ok('dos presentaciones del mismo material')
+  else fallo('dos presentaciones del mismo material', `vio ${blocks.rows[0].n}`)
+
+  await como(RES)
+  const catalogoResidente = await db.query(
+    'select count(*)::int as n from public.catalogo_materiales',
+  )
+  if (catalogoResidente.rows[0].n === 42) ok('residente consulta el catálogo')
+  else fallo('residente consulta el catálogo', `vio ${catalogoResidente.rows[0].n}`)
+
+  await esperarError('residente no edita el catálogo global', () =>
+    db.exec(`insert into public.catalogo_materiales (codigo, categoria, nombre, unidad) values ('X-1', 'otro', 'Ajeno', 'pieza')`), '42501')
 
   await como(ADMIN)
   await esperarError(

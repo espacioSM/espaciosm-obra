@@ -94,7 +94,10 @@ export type TipoMovimientoMaterial = 'entrada' | 'salida'
 export type Material = {
   id: string
   proyecto_id: string
+  catalogo_id: string | null
   nombre: string
+  especificacion: string | null
+  presentacion: string | null
   unidad: string
   costo_unitario: number
   stock_minimo: number
@@ -102,6 +105,18 @@ export type Material = {
   creado_por: string | null
   creado_en: string
   actualizado_en: string
+}
+
+export type MaterialCatalogo = {
+  codigo: string
+  categoria: string
+  nombre: string
+  especificacion: string | null
+  unidad: string
+  presentacion: string | null
+  precio_referencia: number | null
+  url: string | null
+  activo: boolean
 }
 
 export type MaterialMovimiento = {
@@ -355,7 +370,10 @@ export type Database = {
         Insert: {
           id?: string
           proyecto_id: string
+          catalogo_id?: string | null
           nombre: string
+          especificacion?: string | null
+          presentacion?: string | null
           unidad?: string
           costo_unitario?: number
           stock_minimo?: number
@@ -363,7 +381,10 @@ export type Database = {
           creado_por?: string | null
         }
         Update: {
+          catalogo_id?: string | null
           nombre?: string
+          especificacion?: string | null
+          presentacion?: string | null
           unidad?: string
           costo_unitario?: number
           stock_minimo?: number
@@ -392,6 +413,31 @@ export type Database = {
           costo_unitario?: number
           proveedor?: string | null
           nota?: string | null
+        }
+        Relationships: []
+      }
+      catalogo_materiales: {
+        Row: MaterialCatalogo
+        Insert: {
+          codigo: string
+          categoria: string
+          nombre: string
+          especificacion?: string | null
+          unidad: string
+          presentacion?: string | null
+          precio_referencia?: number | null
+          url?: string | null
+          activo?: boolean
+        }
+        Update: {
+          categoria?: string
+          nombre?: string
+          especificacion?: string | null
+          unidad?: string
+          presentacion?: string | null
+          precio_referencia?: number | null
+          url?: string | null
+          activo?: boolean
         }
         Relationships: []
       }

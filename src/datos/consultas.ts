@@ -12,6 +12,7 @@ import type {
   Generador,
   GeneradorAvance,
   Material,
+  MaterialCatalogo,
   MaterialMovimiento,
   Perfil,
   PeriodoPago,
@@ -337,6 +338,9 @@ export type DatosMaterial = {
   unidad: string
   costoUnitario: number
   stockMinimo: number
+  catalogoId?: string | null
+  especificacion?: string | null
+  presentacion?: string | null
 }
 
 export type DatosMovimientoMaterial = {
@@ -371,12 +375,27 @@ export async function crearMaterial(datos: DatosMaterial): Promise<Material> {
       unidad: datos.unidad,
       costo_unitario: datos.costoUnitario,
       stock_minimo: datos.stockMinimo,
+      catalogo_id: datos.catalogoId ?? null,
+      especificacion: datos.especificacion ?? null,
+      presentacion: datos.presentacion ?? null,
     })
     .select('*')
     .single()
 
   if (error) throw error
   return data
+}
+
+export async function listarCatalogoMateriales(): Promise<MaterialCatalogo[]> {
+  const { data, error } = await supabase
+    .from('catalogo_materiales')
+    .select('*')
+    .eq('activo', true)
+    .order('categoria')
+    .order('nombre')
+
+  if (error) throw error
+  return data ?? []
 }
 
 export async function listarMovimientosMaterial(
