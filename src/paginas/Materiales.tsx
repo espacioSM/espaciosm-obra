@@ -480,6 +480,15 @@ export function Materiales() {
   }
 
   async function responderBaja(baja: BajaMaterial, estado: 'aprobada' | 'rechazada') {
+    if (estado === 'aprobada' && (baja.cantidad === null || Number(baja.cantidad) <= 0)) {
+      setAviso({
+        tipo: 'error',
+        texto:
+          'Esta solicitud es anterior al cambio y no tiene cantidad. Recházala y pide una nueva baja con cantidad.',
+      })
+      return
+    }
+
     setRespondiendoBaja(baja.id)
     setAviso(null)
 
@@ -1203,9 +1212,21 @@ export function Materiales() {
                           {baja.solicitante_nombre ?? baja.solicitante_email}
                         </p>
                         <p className="seccion__nota">
-                          Cantidad: {Number(baja.cantidad ?? 0).toFixed(2)} · Motivo:{' '}
-                          {baja.motivo ?? 'Sin motivo indicado'}
+                          {baja.cantidad === null ? (
+                            'Cantidad: sin dato (solicitud anterior al cambio)'
+                          ) : (
+                            <>
+                              Cantidad: {Number(baja.cantidad).toFixed(2)} · Motivo:{' '}
+                              {baja.motivo ?? 'Sin motivo indicado'}
+                            </>
+                          )}
                         </p>
+                        {baja.cantidad === null ? (
+                          <Aviso tipo="error">
+                            Esta solicitud no tiene cantidad y no se puede aprobar. Recházala
+                            y pide al residente que la cree de nuevo.
+                          </Aviso>
+                        ) : null}
                         <div className="campo">
                           <label className="campo__etiqueta" htmlFor={`baja-${baja.id}`}>
                             Respuesta
@@ -1228,7 +1249,11 @@ export function Materiales() {
                           <button
                             type="button"
                             className="boton boton--primario"
-                            disabled={respondiendoBaja !== null}
+                            disabled={
+                              respondiendoBaja !== null ||
+                              baja.cantidad === null ||
+                              Number(baja.cantidad) <= 0
+                            }
                             onClick={() => void responderBaja(baja, 'aprobada')}
                           >
                             {respondiendoBaja === baja.id ? 'Guardando…' : 'Aprobar baja'}
