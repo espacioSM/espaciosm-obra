@@ -212,6 +212,10 @@ export function Avance() {
       cursor.setDate(cursor.getDate() + (muestras.length > 120 ? 3 : 1))
     }
     if (muestras[muestras.length - 1] !== fechaMax) muestras.push(fechaMax)
+    if (hoy >= fechaMin && hoy <= fechaMax && !muestras.includes(hoy)) {
+      muestras.push(hoy)
+    }
+    muestras.sort()
   }
 
   const puntosProgramado = muestras.map((fecha, indice) => {
@@ -229,19 +233,21 @@ export function Avance() {
   })
   const puntosReal = muestras.map((fecha, indice) => {
     const porcentaje =
-      totalCantidad > 0
-        ? filas.reduce((total, fila) => {
-            const ejecutado = avances
-              .filter(
-                (avance) =>
-                  avance.estado === 'validado' &&
-                  avance.generador_id === fila.actividad.generador_id &&
-                  avance.fecha <= fecha,
-              )
-              .reduce((suma, avance) => suma + Number(avance.cantidad), 0)
-            return total + Math.min(Number(fila.actividad.cantidad), ejecutado)
-          }, 0) / totalCantidad
-        : 0
+      fecha === hoy
+        ? avanceRealGlobal
+        : totalCantidad > 0
+          ? filas.reduce((total, fila) => {
+              const ejecutado = avances
+                .filter(
+                  (avance) =>
+                    avance.estado === 'validado' &&
+                    avance.generador_id === fila.actividad.generador_id &&
+                    avance.fecha.slice(0, 10) <= fecha.slice(0, 10),
+                )
+                .reduce((suma, avance) => suma + Number(avance.cantidad), 0)
+              return total + Math.min(Number(fila.actividad.cantidad), ejecutado)
+            }, 0) / totalCantidad
+          : 0
     return { fecha, indice, porcentaje }
   })
 

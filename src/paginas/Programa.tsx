@@ -214,6 +214,19 @@ export function Programa() {
       return
     }
 
+    if (
+      !editandoId &&
+      generadorId !== '' &&
+      actividades.some((actividad) => actividad.generador_id === generadorId)
+    ) {
+      setAviso({
+        tipo: 'error',
+        texto:
+          'Ya existe una actividad para ese concepto. Edítala en lugar de crear otra.',
+      })
+      return
+    }
+
     const predecesor = actividades.find((item) => item.id === dependeDeId)
     const fechas = calcularFechas(
       fechaInicio,
