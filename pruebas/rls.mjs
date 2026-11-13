@@ -183,6 +183,10 @@ try {
   ok('0028 solicitud de estimación')
   await ejecutar('0028_solicitud_estimacion.sql')
   ok('0028 solicitud de estimación repetible')
+  await ejecutar('0029_avances_por_estimar.sql')
+  ok('0029 avances por estimar')
+  await ejecutar('0029_avances_por_estimar.sql')
+  ok('0029 avances por estimar repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values

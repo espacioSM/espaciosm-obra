@@ -102,6 +102,37 @@ export function Estimaciones() {
   const [retencion, setRetencion] = useState('0')
   const [notas, setNotas] = useState('')
 
+  useEffect(() => {
+    if (!esResidente || proyectoId === '') return
+
+    let vigente = true
+    setPrevisualizando(true)
+
+    void previsualizarSolicitudEstimacion(proyectoId, '2000-01-01', hoyISO())
+      .then((partidasDisponibles) => {
+        if (!vigente) return
+        setDisponibles(partidasDisponibles)
+        setSeleccionadas(
+          new Set(partidasDisponibles.map((partida) => partida.generador_id)),
+        )
+        if (partidasDisponibles.length > 0) {
+          setNumero((actual) =>
+            actual === '' ? `SOL-${hoyISO().replaceAll('-', '')}` : actual,
+          )
+        }
+      })
+      .catch((fallo) => {
+        if (vigente) setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+      })
+      .finally(() => {
+        if (vigente) setPrevisualizando(false)
+      })
+
+    return () => {
+      vigente = false
+    }
+  }, [esResidente, proyectoId])
+
   function validarFormulario(): number | null {
     if (numero.trim() === '') {
       setAviso({ tipo: 'error', texto: 'Escribe el número de estimación.' })
@@ -132,7 +163,7 @@ export function Estimaciones() {
 
     try {
       const partidasDisponibles = esResidente
-        ? await previsualizarSolicitudEstimacion(proyectoId, fechaInicio, fechaFin)
+        ? await previsualizarSolicitudEstimacion(proyectoId, '2000-01-01', hoyISO())
         : await previsualizarEstimacion(proyectoId, fechaInicio, fechaFin)
       setDisponibles(partidasDisponibles)
       setSeleccionadas(new Set(partidasDisponibles.map((partida) => partida.generador_id)))
@@ -161,14 +192,25 @@ export function Estimaciones() {
     setCreando(true)
     setAviso(null)
 
+    const seleccionadasData = disponibles.filter((partida) =>
+      seleccionadas.has(partida.generador_id),
+    )
+    const fechas = seleccionadasData
+      .flatMap((partida) => [partida.fecha_min, partida.fecha_max])
+      .filter((fecha): fecha is string => Boolean(fecha))
+      .sort()
+    const inicioSolicitud = esResidente && fechas.length > 0 ? fechas[0] : fechaInicio
+    const finSolicitud =
+      esResidente && fechas.length > 0 ? fechas[fechas.length - 1] : fechaFin
+
     try {
       const id = esResidente
         ? await solicitarEstimacion(
             {
               proyectoId,
               numero: numero.trim(),
-              fechaInicio,
-              fechaFin,
+              fechaInicio: inicioSolicitud,
+              fechaFin: finSolicitud,
               retencion: retencionNumero,
               notas: notas.trim() === '' ? null : notas.trim(),
             },
@@ -319,37 +361,43 @@ export function Estimaciones() {
                   />
                 </div>
 
-                <div className="campo">
-                  <label className="campo__etiqueta" htmlFor="est-inicio">
-                    Fecha inicial
-                  </label>
-                  <input
-                    id="est-inicio"
-                    className="campo__control"
-                    type="date"
-                    max={hoyISO()}
-                    value={fechaInicio}
-                    onChange={(evento) => {
-                      if (evento.target.value !== '') setFechaInicio(evento.target.value)
-                    }}
-                  />
-                </div>
+                {!esResidente ? (
+                  <>
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="est-inicio">
+                        Fecha inicial
+                      </label>
+                      <input
+                        id="est-inicio"
+                        className="campo__control"
+                        type="date"
+                        max={hoyISO()}
+                        value={fechaInicio}
+                        onChange={(evento) => {
+                          if (evento.target.value !== '')
+                            setFechaInicio(evento.target.value)
+                        }}
+                      />
+                    </div>
 
-                <div className="campo">
-                  <label className="campo__etiqueta" htmlFor="est-fin">
-                    Fecha final
-                  </label>
-                  <input
-                    id="est-fin"
-                    className="campo__control"
-                    type="date"
-                    max={hoyISO()}
-                    value={fechaFin}
-                    onChange={(evento) => {
-                      if (evento.target.value !== '') setFechaFin(evento.target.value)
-                    }}
-                  />
-                </div>
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="est-fin">
+                        Fecha final
+                      </label>
+                      <input
+                        id="est-fin"
+                        className="campo__control"
+                        type="date"
+                        max={hoyISO()}
+                        value={fechaFin}
+                        onChange={(evento) => {
+                          if (evento.target.value !== '')
+                            setFechaFin(evento.target.value)
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : null}
 
                 <div className="campo campo--ancho">
                   <label className="campo__etiqueta" htmlFor="est-notas">
@@ -370,7 +418,11 @@ export function Estimaciones() {
                     className="boton boton--primario"
                     disabled={previsualizando}
                   >
-                    {previsualizando ? 'Buscando…' : 'Ver partidas disponibles'}
+                    {previsualizando
+                      ? 'Buscando…'
+                      : esResidente
+                        ? 'Actualizar avances aprobados'
+                        : 'Ver partidas disponibles'}
                   </button>
                 </div>
               </form>

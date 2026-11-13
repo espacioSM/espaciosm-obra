@@ -223,6 +223,8 @@ export type PartidaDisponible = {
   cantidad: number
   precio_unitario: number
   importe: number
+  fecha_min?: string | null
+  fecha_max?: string | null
 }
 
 export type TipoSolicitud = 'material' | 'personal' | 'equipo' | 'otro'
