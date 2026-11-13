@@ -217,6 +217,24 @@ export async function listarAsistencia(
   return data ?? []
 }
 
+export async function listarAsistenciaPeriodo(
+  proyectoId: string,
+  inicio: string,
+  fin: string,
+): Promise<Asistencia[]> {
+  const { data, error } = await supabase
+    .from('asistencia')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .gte('fecha', inicio)
+    .lte('fecha', fin)
+    .order('fecha')
+    .order('creado_en')
+
+  if (error) throw error
+  return data ?? []
+}
+
 export async function registrarEntrada(
   empleadoId: string,
   proyectoId: string,

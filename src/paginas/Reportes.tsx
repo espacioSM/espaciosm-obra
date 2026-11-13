@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
-  listarAsistencia,
+  listarAsistenciaPeriodo,
   listarAvancesGenerador,
   listarBitacora,
+  listarComentariosBitacora,
   listarDirectorio,
   listarEstimaciones,
   listarGeneradores,
@@ -14,16 +15,18 @@ import {
   listarPartidasEstimacion,
   listarProyectos,
 } from '../datos/consultas'
-import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
+import { formatearFecha, formatearHoras, formatearMoneda, hoyISO } from '../lib/formato'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
 import { InsigniaEstado } from '../componentes/Insignias'
 
 export function Reportes() {
-  const { permisos } = useSesion()
+  const { perfil, permisos } = useSesion()
   const proyectosConsulta = useDatos(listarProyectos, [])
   const proyectos = proyectosConsulta.datos ?? []
   const [proyectoId, setProyectoId] = useState('')
+  const [fechaInicio, setFechaInicio] = useState(`${hoyISO().slice(0, 7)}-01`)
+  const [fechaFin, setFechaFin] = useState(hoyISO())
 
   useEffect(() => {
     if (proyectoId === '' && proyectos.length > 0) {
@@ -34,19 +37,21 @@ export function Reportes() {
   const puedeVer = permisos.reportes?.ver === true
   const puedeVerEstimaciones = permisos.estimaciones?.ver === true
   const puedeVerPagos = permisos.pagos?.ver === true
+  const puedeVerBitacora = permisos.bitacora?.ver === true
+  const esResidente = perfil?.rol === 'residente'
 
   const consulta = useDatos(async () => {
-    if (proyectoId === '') return null
+    if (proyectoId === '' || fechaFin < fechaInicio) return null
 
     const [directorio, asistencia, materiales, movimientos, generadores, avances, bitacora] =
       await Promise.all([
         listarDirectorio(proyectoId),
-        listarAsistencia(proyectoId, hoyISO()),
+        listarAsistenciaPeriodo(proyectoId, fechaInicio, fechaFin),
         listarMateriales(proyectoId),
         listarMovimientosMaterial(proyectoId),
         listarGeneradores(proyectoId),
         listarAvancesGenerador(proyectoId),
-        listarBitacora(proyectoId),
+        puedeVerBitacora ? listarBitacora(proyectoId) : Promise.resolve([]),
       ])
 
     const estimaciones = puedeVerEstimaciones
@@ -56,6 +61,9 @@ export function Reportes() {
       ? (await Promise.all(estimaciones.map((estimacion) => listarPartidasEstimacion(estimacion.id)))).flat()
       : []
     const pagos = puedeVerPagos ? await listarPagos(proyectoId) : []
+    const comentarios = puedeVerBitacora
+      ? await listarComentariosBitacora(proyectoId)
+      : []
 
     return {
       proyectoId,
@@ -66,25 +74,75 @@ export function Reportes() {
       generadores,
       avances,
       bitacora,
+      comentarios,
       estimaciones,
       partidas,
       pagos,
     }
-  }, [proyectoId, puedeVerEstimaciones, puedeVerPagos])
+  }, [proyectoId, fechaInicio, fechaFin, puedeVerEstimaciones, puedeVerPagos, puedeVerBitacora])
 
   const datos = consulta.datos
   const proyecto = proyectos.find((item) => item.id === proyectoId)
 
   const personalActivo = datos?.directorio.filter((persona) => persona.activo).length ?? 0
-  const asistenciasHoy = datos?.asistencia.length ?? 0
+  const asistencia = datos?.asistencia ?? []
+  const altas = asistencia.filter((registro) => registro.hora_entrada).length
+  const bajas = asistencia.filter((registro) => registro.hora_salida).length
+  const diasPersona = new Set(
+    asistencia.map((registro) => `${registro.empleado_id}-${registro.fecha}`),
+  ).size
+  const diasConAsistencia = new Set(asistencia.map((registro) => registro.fecha)).size
   const materiales = datos?.materiales ?? []
-  const movimientos = datos?.movimientos ?? []
+  const movimientos = (datos?.movimientos ?? []).filter(
+    (movimiento) => movimiento.fecha <= fechaFin,
+  )
   const generadores = datos?.generadores ?? []
-  const avances = datos?.avances ?? []
-  const estimaciones = datos?.estimaciones ?? []
-  const partidas = datos?.partidas ?? []
-  const pagos = datos?.pagos ?? []
-  const bitacora = datos?.bitacora ?? []
+  const avances = (datos?.avances ?? []).filter(
+    (avance) => avance.fecha >= fechaInicio && avance.fecha <= fechaFin,
+  )
+  const estimaciones = (datos?.estimaciones ?? []).filter(
+    (estimacion) =>
+      estimacion.fecha_inicio <= fechaFin && estimacion.fecha_fin >= fechaInicio,
+  )
+  const idsEstimaciones = new Set(estimaciones.map((estimacion) => estimacion.id))
+  const partidas = (datos?.partidas ?? []).filter((partida) =>
+    idsEstimaciones.has(partida.estimacion_id),
+  )
+  const pagos = (datos?.pagos ?? []).filter(
+    (pago) => pago.fecha >= fechaInicio && pago.fecha <= fechaFin,
+  )
+  const bitacora = (datos?.bitacora ?? []).filter(
+    (entrada) => entrada.fecha >= fechaInicio && entrada.fecha <= fechaFin,
+  )
+  const comentarios = datos?.comentarios ?? []
+  const comentariosPorEntrada = new Map<string, typeof comentarios>()
+  for (const comentario of comentarios) {
+    const lista = comentariosPorEntrada.get(comentario.entrada_id) ?? []
+    lista.push(comentario)
+    comentariosPorEntrada.set(comentario.entrada_id, lista)
+  }
+
+  const resumenAsistencia = new Map<
+    string,
+    { altas: number; bajas: number; dias: Set<string>; horas: number }
+  >()
+  for (const registro of asistencia) {
+    const actual = resumenAsistencia.get(registro.empleado_id) ?? {
+      altas: 0,
+      bajas: 0,
+      dias: new Set<string>(),
+      horas: 0,
+    }
+    if (registro.hora_entrada) actual.altas += 1
+    if (registro.hora_salida) actual.bajas += 1
+    actual.dias.add(registro.fecha)
+    if (registro.hora_entrada && registro.hora_salida) {
+      const entrada = new Date(`1970-01-01T${registro.hora_entrada}`).getTime()
+      const salida = new Date(`1970-01-01T${registro.hora_salida}`).getTime()
+      if (salida > entrada) actual.horas += (salida - entrada) / 3600000
+    }
+    resumenAsistencia.set(registro.empleado_id, actual)
+  }
 
   const stock = materiales.map((material) => {
     const existencia = movimientos
@@ -143,8 +201,8 @@ export function Reportes() {
         <div>
           <h1 className="titulo">Reporte de obra</h1>
           <p className="subtitulo">
-            Resumen ejecutivo al {formatearFecha(hoyISO())}. Listo para imprimir o guardar
-            en PDF.
+            Periodo {formatearFecha(fechaInicio)} — {formatearFecha(fechaFin)} ·
+            Elaboró: {perfil?.nombre ?? perfil?.email ?? 'Usuario'}
           </p>
         </div>
         <div className="acciones">
@@ -197,6 +255,39 @@ export function Reportes() {
                   <InsigniaEstado estado={proyecto.estado} />
                 </span>
               ) : null}
+
+              <div className="campo">
+                <label className="campo__etiqueta" htmlFor="reporte-inicio">
+                  Desde
+                </label>
+                <input
+                  id="reporte-inicio"
+                  className="campo__control"
+                  type="date"
+                  max={fechaFin}
+                  value={fechaInicio}
+                  onChange={(evento) => {
+                    if (evento.target.value !== '') setFechaInicio(evento.target.value)
+                  }}
+                />
+              </div>
+
+              <div className="campo">
+                <label className="campo__etiqueta" htmlFor="reporte-fin">
+                  Hasta
+                </label>
+                <input
+                  id="reporte-fin"
+                  className="campo__control"
+                  type="date"
+                  min={fechaInicio}
+                  max={hoyISO()}
+                  value={fechaFin}
+                  onChange={(evento) => {
+                    if (evento.target.value !== '') setFechaFin(evento.target.value)
+                  }}
+                />
+              </div>
             </div>
           </section>
 
@@ -211,9 +302,21 @@ export function Reportes() {
                   <p className="kpi__nota">En la obra</p>
                 </article>
                 <article className="kpi">
-                  <p className="kpi__etiqueta">Asistencias de hoy</p>
-                  <p className="kpi__valor">{asistenciasHoy}</p>
-                  <p className="kpi__nota">Registros del día</p>
+                  <p className="kpi__etiqueta">Altas</p>
+                  <p className="kpi__valor">{altas}</p>
+                  <p className="kpi__nota">Entradas registradas en el periodo</p>
+                </article>
+                <article className="kpi">
+                  <p className="kpi__etiqueta">Bajas</p>
+                  <p className="kpi__valor">{bajas}</p>
+                  <p className="kpi__nota">Salidas registradas en el periodo</p>
+                </article>
+                <article className="kpi">
+                  <p className="kpi__etiqueta">Días trabajados</p>
+                  <p className="kpi__valor">{diasPersona}</p>
+                  <p className="kpi__nota">
+                    {diasConAsistencia} día(s) con asistencia en la obra
+                  </p>
                 </article>
                 <article className="kpi">
                   <p className="kpi__etiqueta">Avance de obra</p>
@@ -229,6 +332,55 @@ export function Reportes() {
                     <p className="kpi__nota">Acumulado</p>
                   </article>
                 ) : null}
+              </section>
+
+              <section className="tarjeta tarjeta--plana">
+                <div className="seccion__cabecera">
+                  <div>
+                    <h2 className="seccion__titulo">Asistencia por trabajador</h2>
+                    <p className="seccion__nota">
+                      Altas, bajas, días y horas dentro del periodo.
+                    </p>
+                  </div>
+                </div>
+
+                {resumenAsistencia.size === 0 ? (
+                  <Vacio titulo="Sin asistencia en el periodo">
+                    No hay registros para las fechas seleccionadas.
+                  </Vacio>
+                ) : (
+                  <div className="tabla-marco">
+                    <table className="tabla">
+                      <thead>
+                        <tr>
+                          <th scope="col">Trabajador</th>
+                          <th scope="col">Altas</th>
+                          <th scope="col">Bajas</th>
+                          <th scope="col">Días</th>
+                          <th scope="col">Horas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from(resumenAsistencia.entries()).map(
+                          ([empleadoId, resumen]) => {
+                            const empleado = datos?.directorio.find(
+                              (persona) => persona.id === empleadoId,
+                            )
+                            return (
+                              <tr key={empleadoId}>
+                                <td>{empleado?.nombre ?? 'Trabajador'}</td>
+                                <td>{resumen.altas}</td>
+                                <td>{resumen.bajas}</td>
+                                <td>{resumen.dias.size}</td>
+                                <td>{formatearHoras(resumen.horas)}</td>
+                              </tr>
+                            )
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
 
               <section className="tarjeta tarjeta--plana">
@@ -300,7 +452,7 @@ export function Reportes() {
                           <tr>
                             <th scope="col">Material</th>
                             <th scope="col">Existencia</th>
-                            <th scope="col">Último precio</th>
+                            {!esResidente ? <th scope="col">Último precio</th> : null}
                           </tr>
                         </thead>
                         <tbody>
@@ -310,11 +462,13 @@ export function Reportes() {
                               <td>
                                 {existencia.toFixed(2)} {material.unidad}
                               </td>
-                              <td>
-                                {material.ultimo_precio !== null
-                                  ? formatearMoneda(Number(material.ultimo_precio))
-                                  : formatearMoneda(Number(material.costo_unitario))}
-                              </td>
+                              {!esResidente ? (
+                                <td>
+                                  {material.ultimo_precio !== null
+                                    ? formatearMoneda(Number(material.ultimo_precio))
+                                    : formatearMoneda(Number(material.costo_unitario))}
+                                </td>
+                              ) : null}
                             </tr>
                           ))}
                         </tbody>
@@ -334,18 +488,24 @@ export function Reportes() {
                   {bitacora.length === 0 ? (
                     <Vacio titulo="Sin entradas">La bitácora está vacía.</Vacio>
                   ) : (
-                    <ul className="lista-simple">
+                    <div className="lista-simple">
                       {bitacora.slice(0, 5).map((entrada) => (
-                        <li key={entrada.id}>
-                          <span>
-                            <span className="celda-principal">{entrada.titulo}</span>
-                            <span className="celda-nota">
-                              {formatearFecha(entrada.fecha)}
-                            </span>
+                        <div key={entrada.id} style={{ padding: '10px 0' }}>
+                          <span className="celda-principal">
+                            {entrada.titulo} · {formatearFecha(entrada.fecha)}
                           </span>
-                        </li>
+                          <p>{entrada.contenido}</p>
+                          {(comentariosPorEntrada.get(entrada.id) ?? []).map(
+                            (comentario) => (
+                              <p key={comentario.id} className="celda-nota">
+                                Seguimiento: {comentario.comentario} ·{' '}
+                                {comentario.autor_nombre ?? comentario.autor_email}
+                              </p>
+                            ),
+                          )}
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   )}
                 </section>
               </div>
