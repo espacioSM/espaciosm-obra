@@ -47,6 +47,18 @@ export function mensajeDeError(error: unknown): string {
   if (texto.includes('selecciona al menos una partida')) {
     return 'Selecciona al menos una partida antes de enviar la solicitud.'
   }
+  if (texto.includes('estimaciones_fechas_coherentes')) {
+    return 'La fecha final de la estimación no puede ser anterior a la fecha inicial. Revisa el periodo de los avances.'
+  }
+  if (texto.includes('estimaciones_retencion_valida')) {
+    return 'La retención debe ser un número entre 0 y 100.'
+  }
+  if (texto.includes('estimaciones_numero_no_vacio')) {
+    return 'El folio de la estimación quedó vacío. Vuelve a intentarlo.'
+  }
+  if (texto.includes('estimacion_partidas_cantidad_positiva')) {
+    return 'Una partida quedó con cantidad cero. Actualiza los avances aprobados.'
+  }
   if (texto.includes('la cantidad de baja supera')) {
     return 'La cantidad de baja supera el inventario disponible.'
   }

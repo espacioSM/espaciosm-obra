@@ -202,6 +202,16 @@ export function Estimaciones() {
     const finSolicitud =
       esResidente && fechas.length > 0 ? fechas[fechas.length - 1] : fechaFin
 
+    if (finSolicitud < inicioSolicitud) {
+      setCreando(false)
+      setAviso({
+        tipo: 'error',
+        texto:
+          'El periodo de los avances quedó invertido. Actualiza los avances aprobados y vuelve a intentarlo.',
+      })
+      return
+    }
+
     try {
       const id = esResidente
         ? await solicitarEstimacion(
