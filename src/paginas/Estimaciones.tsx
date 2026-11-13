@@ -115,11 +115,6 @@ export function Estimaciones() {
         setSeleccionadas(
           new Set(partidasDisponibles.map((partida) => partida.generador_id)),
         )
-        if (partidasDisponibles.length > 0) {
-          setNumero((actual) =>
-            actual === '' ? `SOL-${hoyISO().replaceAll('-', '')}` : actual,
-          )
-        }
       })
       .catch((fallo) => {
         if (vigente) setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
@@ -134,7 +129,7 @@ export function Estimaciones() {
   }, [esResidente, proyectoId])
 
   function validarFormulario(): number | null {
-    if (numero.trim() === '') {
+    if (!esResidente && numero.trim() === '') {
       setAviso({ tipo: 'error', texto: 'Escribe el número de estimación.' })
       return null
     }
@@ -334,18 +329,31 @@ export function Estimaciones() {
               </div>
 
               <form className="formulario" onSubmit={(evento) => void previsualizar(evento)}>
-                <div className="campo">
-                  <label className="campo__etiqueta" htmlFor="est-numero">
-                    Número
-                  </label>
-                  <input
-                    id="est-numero"
-                    className="campo__control"
-                    value={numero}
-                    onChange={(evento) => setNumero(evento.target.value)}
-                    placeholder="EST-01"
-                  />
-                </div>
+                {esResidente ? (
+                  <div className="campo campo--ancho">
+                    <span className="campo__etiqueta">Folio de solicitud</span>
+                    <div className="campo__control campo__control--fijo">
+                      Se generará automáticamente con el formato SOL-AAAAMMDD
+                    </div>
+                    <span className="campo__ayuda">
+                      Si ya existe un folio de ese día en la obra, se agrega -02, -03,
+                      etc.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="campo">
+                    <label className="campo__etiqueta" htmlFor="est-numero">
+                      Número
+                    </label>
+                    <input
+                      id="est-numero"
+                      className="campo__control"
+                      value={numero}
+                      onChange={(evento) => setNumero(evento.target.value)}
+                      placeholder="EST-01"
+                    />
+                  </div>
+                )}
 
                 <div className="campo">
                   <label className="campo__etiqueta" htmlFor="est-retencion">

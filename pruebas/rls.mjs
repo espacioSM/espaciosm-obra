@@ -187,6 +187,14 @@ try {
   ok('0029 avances por estimar')
   await ejecutar('0029_avances_por_estimar.sql')
   ok('0029 avances por estimar repetible')
+  await ejecutar('0030_disponible_residente.sql')
+  ok('0030 disponible del residente')
+  await ejecutar('0030_disponible_residente.sql')
+  ok('0030 disponible del residente repetible')
+  await ejecutar('0031_folio_solicitud.sql')
+  ok('0031 folio automático')
+  await ejecutar('0031_folio_solicitud.sql')
+  ok('0031 folio automático repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
