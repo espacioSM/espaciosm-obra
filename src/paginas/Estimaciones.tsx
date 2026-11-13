@@ -3,12 +3,18 @@ import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
   actualizarEstadoEstimacion,
-  crearEstimacion,
+  crearEstimacionSeleccion,
   listarEstimaciones,
   listarPartidasEstimacion,
   listarProyectos,
+  previsualizarEstimacion,
 } from '../datos/consultas'
-import type { EstadoEstimacion, Estimacion, EstimacionPartida } from '../lib/tipos'
+import type {
+  EstadoEstimacion,
+  Estimacion,
+  EstimacionPartida,
+  PartidaDisponible,
+} from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
@@ -83,52 +89,100 @@ export function Estimaciones() {
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
     null,
   )
-  const [guardando, setGuardando] = useState(false)
+  const [previsualizando, setPrevisualizando] = useState(false)
+  const [creando, setCreando] = useState(false)
+  const [disponibles, setDisponibles] = useState<PartidaDisponible[]>([])
+  const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
   const [numero, setNumero] = useState('')
   const [fechaInicio, setFechaInicio] = useState(`${hoyISO().slice(0, 7)}-01`)
   const [fechaFin, setFechaFin] = useState(hoyISO())
   const [retencion, setRetencion] = useState('0')
   const [notas, setNotas] = useState('')
 
-  async function guardar(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault()
-
+  function validarFormulario(): number | null {
     if (numero.trim() === '') {
       setAviso({ tipo: 'error', texto: 'Escribe el número de estimación.' })
-      return
+      return null
     }
     if (fechaFin < fechaInicio) {
       setAviso({ tipo: 'error', texto: 'La fecha final debe ser posterior a la inicial.' })
-      return
+      return null
     }
 
     const retencionNumero = Number(retencion)
     if (!Number.isFinite(retencionNumero) || retencionNumero < 0 || retencionNumero > 100) {
       setAviso({ tipo: 'error', texto: 'La retención debe estar entre 0 y 100.' })
-      return
+      return null
     }
 
-    setGuardando(true)
+    return retencionNumero
+  }
+
+  async function previsualizar(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+
+    const retencionNumero = validarFormulario()
+    if (retencionNumero === null) return
+
+    setPrevisualizando(true)
     setAviso(null)
 
     try {
-      const id = await crearEstimacion({
+      const partidasDisponibles = await previsualizarEstimacion(
         proyectoId,
-        numero: numero.trim(),
         fechaInicio,
         fechaFin,
-        retencion: retencionNumero,
-        notas: notas.trim() === '' ? null : notas.trim(),
-      })
-      setNumero('')
-      setNotas('')
-      estimacionesConsulta.recargar()
-      setEstimacionId(id)
-      setAviso({ tipo: 'exito', texto: 'Estimación creada con los avances del periodo.' })
+      )
+      setDisponibles(partidasDisponibles)
+      setSeleccionadas(new Set(partidasDisponibles.map((partida) => partida.generador_id)))
+      if (partidasDisponibles.length === 0) {
+        setAviso({
+          tipo: 'error',
+          texto: 'No hay avances validados pendientes de estimar en ese periodo.',
+        })
+      }
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
-      setGuardando(false)
+      setPrevisualizando(false)
+    }
+  }
+
+  async function crearSeleccion() {
+    const retencionNumero = validarFormulario()
+    if (retencionNumero === null) return
+
+    if (seleccionadas.size === 0) {
+      setAviso({ tipo: 'error', texto: 'Selecciona al menos una partida.' })
+      return
+    }
+
+    setCreando(true)
+    setAviso(null)
+
+    try {
+      const id = await crearEstimacionSeleccion(
+        {
+          proyectoId,
+          numero: numero.trim(),
+          fechaInicio,
+          fechaFin,
+          retencion: retencionNumero,
+          notas: notas.trim() === '' ? null : notas.trim(),
+        },
+        Array.from(seleccionadas),
+      )
+      setNumero('')
+      setNotas('')
+      setDisponibles([])
+      setSeleccionadas(new Set())
+      estimacionesConsulta.recargar()
+      setEstimacionId(id)
+      setAviso({ tipo: 'exito', texto: 'Estimación creada con las partidas seleccionadas.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setCreando(false)
     }
   }
 
@@ -215,7 +269,7 @@ export function Estimaciones() {
                 </div>
               </div>
 
-              <form className="formulario" onSubmit={(evento) => void guardar(evento)}>
+              <form className="formulario" onSubmit={(evento) => void previsualizar(evento)}>
                 <div className="campo">
                   <label className="campo__etiqueta" htmlFor="est-numero">
                     Número
@@ -292,9 +346,9 @@ export function Estimaciones() {
                   <button
                     type="submit"
                     className="boton boton--primario"
-                    disabled={guardando}
+                    disabled={previsualizando}
                   >
-                    {guardando ? 'Calculando…' : 'Crear estimación'}
+                    {previsualizando ? 'Buscando…' : 'Ver partidas disponibles'}
                   </button>
                 </div>
               </form>
@@ -302,6 +356,123 @@ export function Estimaciones() {
           ) : (
             <Aviso tipo="info">Solo consulta. La creación y autorización es de administración.</Aviso>
           )}
+
+          {disponibles.length > 0 ? (
+            <section className="tarjeta">
+              <div className="seccion__cabecera">
+                <div>
+                  <h2 className="seccion__titulo">Partidas para esta estimación</h2>
+                  <p className="seccion__nota">
+                    Desactiva las partidas que quieras dejar en reserva.
+                  </p>
+                </div>
+                <span className="seccion__nota">
+                  {seleccionadas.size} de {disponibles.length} incluidas
+                </span>
+              </div>
+
+              <div className="tabla-marco">
+                <table className="tabla">
+                  <thead>
+                    <tr>
+                      <th scope="col">
+                        <input
+                          type="checkbox"
+                          checked={seleccionadas.size === disponibles.length}
+                          onChange={(evento) =>
+                            setSeleccionadas(
+                              evento.target.checked
+                                ? new Set(
+                                    disponibles.map((partida) => partida.generador_id),
+                                  )
+                                : new Set(),
+                            )
+                          }
+                          aria-label="Incluir todas"
+                        />
+                      </th>
+                      <th scope="col">Concepto</th>
+                      <th scope="col">Unidad</th>
+                      <th scope="col">Cantidad</th>
+                      <th scope="col">P. unitario</th>
+                      <th scope="col">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {disponibles.map((partida) => (
+                      <tr key={partida.generador_id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={seleccionadas.has(partida.generador_id)}
+                            onChange={(evento) => {
+                              setSeleccionadas((previas) => {
+                                const siguientes = new Set(previas)
+                                if (evento.target.checked) {
+                                  siguientes.add(partida.generador_id)
+                                } else {
+                                  siguientes.delete(partida.generador_id)
+                                }
+                                return siguientes
+                              })
+                            }}
+                            aria-label={`Incluir ${partida.descripcion}`}
+                          />
+                        </td>
+                        <td>
+                          <span className="celda-principal">{partida.descripcion}</span>
+                          <span className="celda-nota">{partida.clave ?? ''}</span>
+                        </td>
+                        <td>{partida.unidad}</td>
+                        <td>{Number(partida.cantidad).toFixed(2)}</td>
+                        <td>{formatearMoneda(Number(partida.precio_unitario))}</td>
+                        <td>{formatearMoneda(Number(partida.importe))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="filtros">
+                <div className="dato">
+                  <span className="meta-etiqueta">Seleccionado</span>
+                  <span className="dato__valor">
+                    {formatearMoneda(
+                      disponibles
+                        .filter((partida) =>
+                          seleccionadas.has(partida.generador_id),
+                        )
+                        .reduce((total, partida) => total + Number(partida.importe), 0),
+                    )}
+                  </span>
+                </div>
+                <div className="dato">
+                  <span className="meta-etiqueta">Retención</span>
+                  <span className="dato__valor">
+                    {formatearMoneda(
+                      (disponibles
+                        .filter((partida) =>
+                          seleccionadas.has(partida.generador_id),
+                        )
+                        .reduce((total, partida) => total + Number(partida.importe), 0) *
+                        Number(retencion || 0)) /
+                        100,
+                    )}
+                  </span>
+                </div>
+                <div className="acciones">
+                  <button
+                    type="button"
+                    className="boton boton--primario"
+                    disabled={creando || seleccionadas.size === 0}
+                    onClick={() => void crearSeleccion()}
+                  >
+                    {creando ? 'Creando…' : 'Crear estimación seleccionada'}
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {estimacionesConsulta.cargando && !estimacionesConsulta.datos ? (
             <Cargando />
@@ -431,23 +602,30 @@ export function Estimaciones() {
                     </div>
                   </div>
 
-                  {puedeEditar ? (
-                    <div className="acciones">
-                      {(['enviada', 'autorizada', 'pagada'] as EstadoEstimacion[]).map(
-                        (estado) => (
-                          <button
-                            key={estado}
-                            type="button"
-                            className="boton"
-                            disabled={estimacionSeleccionada.estado === estado}
-                            onClick={() => void cambiarEstado(estado)}
-                          >
-                            Marcar {TITULO_ESTADO[estado].toLowerCase()}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  ) : null}
+                  <div className="acciones">
+                    <button
+                      type="button"
+                      className="boton"
+                      onClick={() => window.print()}
+                    >
+                      Imprimir / Guardar PDF
+                    </button>
+                    {puedeEditar
+                      ? (['enviada', 'autorizada', 'pagada'] as EstadoEstimacion[]).map(
+                          (estado) => (
+                            <button
+                              key={estado}
+                              type="button"
+                              className="boton"
+                              disabled={estimacionSeleccionada.estado === estado}
+                              onClick={() => void cambiarEstado(estado)}
+                            >
+                              Marcar {TITULO_ESTADO[estado].toLowerCase()}
+                            </button>
+                          ),
+                        )
+                      : null}
+                  </div>
                 </section>
               ) : null}
             </>

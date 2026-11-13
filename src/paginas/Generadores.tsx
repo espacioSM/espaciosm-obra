@@ -77,9 +77,9 @@ export function Generadores() {
   const [nota, setNota] = useState('')
   const [respuestaResidente, setRespuestaResidente] = useState('')
   const [avanceEditando, setAvanceEditando] = useState<GeneradorAvance | null>(null)
-  const [fotoFile, setFotoFile] = useState<File | null>(null)
-  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
-  const [fotoPathActual, setFotoPathActual] = useState<string | null>(null)
+  const [fotoFiles, setFotoFiles] = useState<File[]>([])
+  const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
+  const [fotoPathsActuales, setFotoPathsActuales] = useState<string[]>([])
   const formAvanceRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -204,10 +204,10 @@ export function Generadores() {
     setGuardandoAvance(true)
     setAviso(null)
 
-    let fotoPath = fotoPathActual
+    let fotoPaths = fotoPathsActuales
 
     try {
-      if (fotoFile) {
+      if (fotoFiles.length > 0) {
         const proyecto = proyectos.find((item) => item.id === proyectoId)
         const sello = new Intl.DateTimeFormat('es-MX', {
           dateStyle: 'short',
@@ -218,15 +218,19 @@ export function Generadores() {
           [nivel, eje, tramo, frente].filter((valor) => valor.trim() !== '').join(' · ') ||
           'Sin ubicación'
 
-        fotoPath = await subirEvidencia(proyectoId, generadorId, fotoFile, [
-          `espacioSM Obra · ${proyecto?.nombre ?? 'Proyecto'}`,
-          sello,
-          `Ubicación: ${ubicacion}`,
-          `Concepto: ${generadorSeleccionado?.descripcion ?? 'Sin concepto'}`,
-          `Cantidad: ${cantidadFinal.toFixed(2)} ${
-            generadorSeleccionado?.unidad ?? ''
-          }`,
-        ])
+        fotoPaths = []
+        for (const archivo of fotoFiles.slice(0, 3)) {
+          const ruta = await subirEvidencia(proyectoId, generadorId, archivo, [
+            `espacioSM Obra · ${proyecto?.nombre ?? 'Proyecto'}`,
+            sello,
+            `Ubicación: ${ubicacion}`,
+            `Concepto: ${generadorSeleccionado?.descripcion ?? 'Sin concepto'}`,
+            `Cantidad: ${cantidadFinal.toFixed(2)} ${
+              generadorSeleccionado?.unidad ?? ''
+            }`,
+          ])
+          fotoPaths.push(ruta)
+        }
       }
 
       const datos = {
@@ -245,7 +249,7 @@ export function Generadores() {
         observaciones: null,
         respuestaResidente:
           respuestaResidente.trim() === '' ? null : respuestaResidente.trim(),
-        fotoPath,
+        fotoPaths,
         nota: nota.trim() === '' ? null : nota.trim(),
         usuarioId,
       }
@@ -267,9 +271,9 @@ export function Generadores() {
       setTramo('')
       setFrente('')
       setNota('')
-      setFotoFile(null)
-      setFotoPreview(null)
-      setFotoPathActual(null)
+      setFotoFiles([])
+      setFotoPreviews([])
+      setFotoPathsActuales([])
       consulta.recargar()
       setAviso({
         tipo: 'exito',
@@ -300,9 +304,15 @@ export function Generadores() {
     setCantidadAvance(String(avance.cantidad))
     setNota(avance.nota ?? '')
     setRespuestaResidente(avance.respuesta_residente ?? '')
-    setFotoPathActual(avance.foto_path)
-    setFotoFile(null)
-    setFotoPreview(null)
+    setFotoPathsActuales(
+      avance.foto_paths && avance.foto_paths.length > 0
+        ? avance.foto_paths
+        : avance.foto_path
+          ? [avance.foto_path]
+          : [],
+    )
+    setFotoFiles([])
+    setFotoPreviews([])
     setAviso(null)
     window.setTimeout(() => {
       formAvanceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -794,29 +804,42 @@ export function Generadores() {
                             type="file"
                             accept="image/*"
                             capture="environment"
+                            multiple
                             onChange={(evento) => {
-                              const archivo = evento.target.files?.[0] ?? null
-                              setFotoFile(archivo)
-                              if (fotoPreview) URL.revokeObjectURL(fotoPreview)
-                              setFotoPreview(
-                                archivo ? URL.createObjectURL(archivo) : null,
+                              const archivos = Array.from(
+                                evento.target.files ?? [],
+                              ).slice(0, 3)
+                              for (const preview of fotoPreviews) {
+                                URL.revokeObjectURL(preview)
+                              }
+                              setFotoFiles(archivos)
+                              setFotoPreviews(
+                                archivos.map((archivo) =>
+                                  URL.createObjectURL(archivo),
+                                ),
                               )
                             }}
                           />
                           <span className="campo__ayuda">
-                            La app agrega proyecto, fecha, ubicación y concepto sobre la
-                            foto.
+                            Hasta 3 fotos. La app agrega proyecto, fecha, ubicación y
+                            concepto sobre cada una.
                           </span>
-                          {fotoPreview ? (
-                            <img
-                              className="foto-previa"
-                              src={fotoPreview}
-                              alt="Vista previa de la evidencia"
-                            />
+                          {fotoPreviews.length > 0 ? (
+                            <div className="fotos-previas">
+                              {fotoPreviews.map((preview) => (
+                                <img
+                                  key={preview}
+                                  className="foto-previa"
+                                  src={preview}
+                                  alt="Vista previa de la evidencia"
+                                />
+                              ))}
+                            </div>
                           ) : null}
-                          {fotoPathActual && !fotoFile ? (
+                          {fotoPathsActuales.length > 0 && fotoFiles.length === 0 ? (
                             <span className="campo__ayuda">
-                              Este avance ya tiene foto. Si eliges otra, se reemplaza.
+                              Este avance ya tiene {fotoPathsActuales.length} foto(s). Si
+                              eliges nuevas, se reemplazan.
                             </span>
                           ) : null}
                         </div>
@@ -964,7 +987,16 @@ export function Generadores() {
                                   .join(' · ') || 'Sin ubicación'}
                               </td>
                               <td>
-                                <FotoAvance ruta={avance.foto_path} />
+                                <div className="fotos-tabla">
+                                  {(avance.foto_paths && avance.foto_paths.length > 0
+                                    ? avance.foto_paths
+                                    : avance.foto_path
+                                      ? [avance.foto_path]
+                                      : []
+                                  ).map((ruta) => (
+                                    <FotoAvance key={ruta} ruta={ruta} />
+                                  ))}
+                                </div>
                               </td>
                               <td>
                                 {Number(avance.cantidad).toFixed(2)}{' '}

@@ -176,6 +176,7 @@ export type GeneradorAvance = {
   observaciones: string | null
   respuesta_residente: string | null
   foto_path: string | null
+  foto_paths: string[]
   nota: string | null
   registrado_por: string | null
   creado_en: string
@@ -211,6 +212,16 @@ export type EstimacionPartida = {
   precio_unitario: number
   importe: number
   creado_en: string
+}
+
+export type PartidaDisponible = {
+  generador_id: string
+  clave: string | null
+  descripcion: string
+  unidad: string
+  cantidad: number
+  precio_unitario: number
+  importe: number
 }
 
 export type TipoSolicitud = 'material' | 'personal' | 'equipo' | 'otro'
@@ -542,6 +553,7 @@ export type Database = {
           observaciones?: string | null
           respuesta_residente?: string | null
           foto_path?: string | null
+          foto_paths?: string[]
           nota?: string | null
           registrado_por?: string | null
         }
@@ -560,6 +572,7 @@ export type Database = {
           observaciones?: string | null
           respuesta_residente?: string | null
           foto_path?: string | null
+          foto_paths?: string[]
           nota?: string | null
         }
         Relationships: []
@@ -696,6 +709,26 @@ export type Database = {
           p_fecha_fin: string
           p_retencion: number
           p_notas: string | null
+        }
+        Returns: string
+      }
+      previsualizar_estimacion: {
+        Args: {
+          p_proyecto_id: string
+          p_fecha_inicio: string
+          p_fecha_fin: string
+        }
+        Returns: PartidaDisponible[]
+      }
+      crear_estimacion_seleccion: {
+        Args: {
+          p_proyecto_id: string
+          p_numero: string
+          p_fecha_inicio: string
+          p_fecha_fin: string
+          p_retencion: number
+          p_notas: string | null
+          p_generador_ids: string[]
         }
         Returns: string
       }

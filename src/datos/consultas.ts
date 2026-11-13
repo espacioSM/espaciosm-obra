@@ -19,6 +19,7 @@ import type {
   MaterialMovimiento,
   Perfil,
   PeriodoPago,
+  PartidaDisponible,
   Proyecto,
   ProyectoMiembro,
   ResidenteEnObra,
@@ -549,7 +550,7 @@ export type DatosAvanceGenerador = {
   estado: EstadoAvanceGenerador
   observaciones: string | null
   respuestaResidente: string | null
-  fotoPath: string | null
+  fotoPaths: string[]
   nota: string | null
   usuarioId: string | null
 }
@@ -617,7 +618,8 @@ export async function crearAvanceGenerador(
     estado: datos.estado,
     observaciones: datos.observaciones,
     respuesta_residente: datos.respuestaResidente,
-    foto_path: datos.fotoPath,
+    foto_path: datos.fotoPaths[0] ?? null,
+    foto_paths: datos.fotoPaths,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
@@ -644,7 +646,8 @@ export async function actualizarAvanceGenerador(
       piezas: datos.piezas,
       estado: datos.estado,
       respuesta_residente: datos.respuestaResidente,
-      foto_path: datos.fotoPath,
+      foto_path: datos.fotoPaths[0] ?? null,
+      foto_paths: datos.fotoPaths,
       nota: datos.nota,
     })
     .eq('id', avanceId)
@@ -713,6 +716,39 @@ export async function crearEstimacion(datos: DatosEstimacion): Promise<string> {
     p_fecha_fin: datos.fechaFin,
     p_retencion: datos.retencion,
     p_notas: datos.notas,
+  })
+
+  if (error) throw error
+  return data
+}
+
+export async function previsualizarEstimacion(
+  proyectoId: string,
+  fechaInicio: string,
+  fechaFin: string,
+): Promise<PartidaDisponible[]> {
+  const { data, error } = await supabase.rpc('previsualizar_estimacion', {
+    p_proyecto_id: proyectoId,
+    p_fecha_inicio: fechaInicio,
+    p_fecha_fin: fechaFin,
+  })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearEstimacionSeleccion(
+  datos: DatosEstimacion,
+  generadorIds: string[],
+): Promise<string> {
+  const { data, error } = await supabase.rpc('crear_estimacion_seleccion', {
+    p_proyecto_id: datos.proyectoId,
+    p_numero: datos.numero,
+    p_fecha_inicio: datos.fechaInicio,
+    p_fecha_fin: datos.fechaFin,
+    p_retencion: datos.retencion,
+    p_notas: datos.notas,
+    p_generador_ids: generadorIds,
   })
 
   if (error) throw error

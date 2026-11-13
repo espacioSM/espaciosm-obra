@@ -155,6 +155,14 @@ try {
   ok('0020 foto de avance')
   await ejecutar('0020_foto_avance.sql')
   ok('0020 foto de avance repetible')
+  await ejecutar('0022_estimacion_carrito.sql')
+  ok('0022 estimación con selección')
+  await ejecutar('0022_estimacion_carrito.sql')
+  ok('0022 estimación con selección repetible')
+  await ejecutar('0023_tres_fotos.sql')
+  ok('0023 tres fotos')
+  await ejecutar('0023_tres_fotos.sql')
+  ok('0023 tres fotos repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -456,6 +464,47 @@ try {
   else fallo('oficina ve al residente en obra', `vio ${residentesOficina.rows.length}`)
 
   await como(ADMIN)
+  const vistaPrevia = await db.query(`
+    select * from public.previsualizar_estimacion(
+      '${P1}',
+      (now() at time zone 'America/Mexico_City')::date,
+      (now() at time zone 'America/Mexico_City')::date
+    )
+  `)
+  if (
+    vistaPrevia.rows.length === 1 &&
+    Number(vistaPrevia.rows[0].cantidad) === 40 &&
+    Number(vistaPrevia.rows[0].importe) === 10000
+  ) {
+    ok('previsualiza partidas de estimación')
+  } else {
+    fallo('previsualiza partidas de estimación', JSON.stringify(vistaPrevia.rows))
+  }
+
+  const seleccionEstimacion = await db.query(`
+    select public.crear_estimacion_seleccion(
+      '${P1}', 'EST-SEL',
+      (now() at time zone 'America/Mexico_City')::date,
+      (now() at time zone 'America/Mexico_City')::date,
+      0, null,
+      array['${GEN}']::uuid[]
+    ) as id
+  `)
+  const partidasSeleccion = await db.query(
+    'select cantidad::text, importe::text from public.estimacion_partidas where estimacion_id = $1',
+    [seleccionEstimacion.rows[0].id],
+  )
+  if (
+    partidasSeleccion.rows.length === 1 &&
+    Number(partidasSeleccion.rows[0].cantidad) === 40
+  ) {
+    ok('crea estimación solo con partidas seleccionadas')
+  } else {
+    fallo('crea estimación solo con partidas seleccionadas', JSON.stringify(partidasSeleccion.rows))
+  }
+
+  await db.exec(`delete from public.estimaciones where id = '${seleccionEstimacion.rows[0].id}'`)
+
   const estimacionCreada = await db.query(`
     select public.crear_estimacion(
       '${P1}',
