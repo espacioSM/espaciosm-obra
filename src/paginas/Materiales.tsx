@@ -27,8 +27,9 @@ const CATEGORIA: Record<string, string> = {
 }
 
 export function Materiales() {
-  const { sesion, permisos } = useSesion()
+  const { sesion, perfil, permisos } = useSesion()
   const usuarioId = sesion?.user.id ?? null
+  const esGestor = perfil?.rol === 'admin' || perfil?.rol === 'permiso_medio'
   const proyectosConsulta = useDatos(listarProyectos, [])
   const proyectos = proyectosConsulta.datos ?? []
   const [proyectoId, setProyectoId] = useState('')
@@ -51,11 +52,15 @@ export function Materiales() {
   const materiales = consulta.datos?.materiales ?? []
   const movimientos = consulta.datos?.movimientos ?? []
   const datosProyectoId = consulta.datos?.proyectoId ?? ''
-  const catalogoConsulta = useDatos(listarCatalogoMateriales, [])
+  const catalogoConsulta = useDatos(
+    () => (esGestor ? listarCatalogoMateriales() : Promise.resolve([])),
+    [esGestor],
+  )
   const catalogo = catalogoConsulta.datos ?? []
   const puedeVer = permisos.materiales?.ver === true
   const puedeCrear = permisos.materiales?.crear === true
 
+  const [catalogoAbierto, setCatalogoAbierto] = useState(false)
   const [busquedaCatalogo, setBusquedaCatalogo] = useState('')
   const [agregandoCatalogo, setAgregandoCatalogo] = useState<string | null>(null)
   const codigosExistentes = new Set(
@@ -69,6 +74,7 @@ export function Materiales() {
   const [guardandoMovimiento, setGuardandoMovimiento] = useState(false)
 
   const [nombreMaterial, setNombreMaterial] = useState('')
+  const [especificacionMaterial, setEspecificacionMaterial] = useState('')
   const [unidad, setUnidad] = useState('pieza')
   const [costoMaterial, setCostoMaterial] = useState('')
   const [stockMinimo, setStockMinimo] = useState('0')
@@ -79,6 +85,7 @@ export function Materiales() {
   const [cantidad, setCantidad] = useState('')
   const [costoMovimiento, setCostoMovimiento] = useState('')
   const [proveedor, setProveedor] = useState('')
+  const [descripcion, setDescripcion] = useState('')
   const [nota, setNota] = useState('')
   const movimientoRef = useRef<HTMLElement | null>(null)
   const cantidadRef = useRef<HTMLInputElement | null>(null)
@@ -181,14 +188,17 @@ export function Materiales() {
         proyectoId,
         nombre: material.nombre,
         unidad: material.unidad,
-        costoUnitario: Number(material.precio_referencia ?? 0),
+        costoUnitario: Number(material.ultimo_precio ?? material.precio_referencia ?? 0),
         stockMinimo: 0,
         catalogoId: material.codigo,
         especificacion: material.especificacion,
         presentacion: material.presentacion,
       })
       consulta.recargar()
-      enfocarMovimiento(creado.id, Number(creado.costo_unitario))
+      enfocarMovimiento(
+        creado.id,
+        Number(creado.ultimo_precio ?? creado.costo_unitario),
+      )
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
@@ -199,7 +209,10 @@ export function Materiales() {
   function usarMaterial(codigo: string) {
     const material = materiales.find((item) => item.catalogo_id === codigo)
     if (!material) return
-    enfocarMovimiento(material.id, Number(material.costo_unitario))
+    enfocarMovimiento(
+      material.id,
+      Number(material.ultimo_precio ?? material.costo_unitario),
+    )
   }
 
   async function guardarMaterial(evento: FormEvent<HTMLFormElement>) {
@@ -232,14 +245,18 @@ export function Materiales() {
         unidad: unidad.trim() === '' ? 'pieza' : unidad.trim(),
         costoUnitario: Math.round(costo * 100) / 100,
         stockMinimo: Math.round(minimo * 100) / 100,
+        especificacion:
+          especificacionMaterial.trim() === '' ? null : especificacionMaterial.trim(),
       })
       setNombreMaterial('')
+      setEspecificacionMaterial('')
       setUnidad('pieza')
       setCostoMaterial('')
       setStockMinimo('0')
       setMaterialId(material.id)
       setCostoMovimiento(String(material.costo_unitario))
       consulta.recargar()
+      catalogoConsulta.recargar()
       setAviso({ tipo: 'exito', texto: 'Material agregado al catálogo.' })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
@@ -279,13 +296,16 @@ export function Materiales() {
         cantidad: Math.round(cantidadNumero * 100) / 100,
         costoUnitario: Math.round(costoNumero * 100) / 100,
         proveedor: proveedor.trim() === '' ? null : proveedor.trim(),
+        descripcion: descripcion.trim() === '' ? null : descripcion.trim(),
         nota: nota.trim() === '' ? null : nota.trim(),
         usuarioId,
       })
       setCantidad('')
       setProveedor('')
+      setDescripcion('')
       setNota('')
       consulta.recargar()
+      catalogoConsulta.recargar()
       setAviso({
         tipo: 'exito',
         texto: tipo === 'entrada' ? 'Entrada registrada.' : 'Salida registrada.',
@@ -312,10 +332,21 @@ export function Materiales() {
         <div>
           <h1 className="titulo">Materiales</h1>
           <p className="subtitulo">
-            Entradas, salidas y existencias por obra. El residente captura su obra;
-            administración y permiso medio consultan todo.
+            Entradas, salidas y existencias por obra. Administración y permiso medio
+            capturan; el residente solo consulta.
           </p>
         </div>
+        {esGestor ? (
+          <div className="acciones">
+            <button
+              type="button"
+              className="boton boton--tenue"
+              onClick={() => setCatalogoAbierto((abierto) => !abierto)}
+            >
+              {catalogoAbierto ? 'Ocultar catálogo' : 'Mostrar catálogo'}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {proyectosConsulta.error ? (
@@ -359,6 +390,13 @@ export function Materiales() {
 
           {aviso ? <Aviso tipo={aviso.tipo}>{aviso.texto}</Aviso> : null}
 
+          {!puedeCrear ? (
+            <Aviso tipo="info">
+              Solo consulta. La captura de materiales corresponde a administración y
+              permiso medio.
+            </Aviso>
+          ) : null}
+
           <section className="rejilla-kpi">
             <article className="kpi">
               <p className="kpi__etiqueta">Materiales</p>
@@ -382,34 +420,32 @@ export function Materiales() {
             </article>
           </section>
 
-          <section className="tarjeta tarjeta--plana">
-            <div className="seccion__cabecera">
-              <div>
-                <h2 className="seccion__titulo">Catálogo de proveedor</h2>
-                <p className="seccion__nota">
-                  Materiales comunes precargados. Al agregar, se abre Registrar movimiento
-                  con el material y el precio de referencia; ahí capturas cantidad y costo
-                  real. El enlace abre Home Depot.
-                </p>
+          {esGestor && catalogoAbierto ? (
+            <section className="tarjeta tarjeta--plana">
+              <div className="seccion__cabecera">
+                <div>
+                  <h2 className="seccion__titulo">Catálogo de proveedor</h2>
+                  <p className="seccion__nota">
+                    Materiales comunes precargados. Al agregar, se abre Registrar
+                    movimiento con el material y el último precio; ahí capturas cantidad
+                    y costo real. El enlace abre Home Depot.
+                  </p>
+                </div>
               </div>
-              <span className="seccion__nota">
-                {catalogoFiltrado.length} de {catalogo.length}
-              </span>
-            </div>
 
-            <div className="campo">
-              <label className="campo__etiqueta" htmlFor="catalogo-busqueda">
-                Buscar material
-              </label>
-              <input
-                id="catalogo-busqueda"
-                className="campo__control"
-                type="search"
-                value={busquedaCatalogo}
-                onChange={(evento) => setBusquedaCatalogo(evento.target.value)}
-                placeholder="Cemento, block, varilla, pintura…"
-              />
-            </div>
+                  <div className="campo">
+                    <label className="campo__etiqueta" htmlFor="catalogo-busqueda">
+                      Buscar material
+                    </label>
+                    <input
+                      id="catalogo-busqueda"
+                      className="campo__control"
+                      type="search"
+                      value={busquedaCatalogo}
+                      onChange={(evento) => setBusquedaCatalogo(evento.target.value)}
+                      placeholder="Cemento, block, varilla, pintura…"
+                    />
+                  </div>
 
             {catalogoFiltrado.length === 0 ? (
               <Vacio titulo="Sin coincidencias">
@@ -422,7 +458,7 @@ export function Materiales() {
                     <tr>
                       <th scope="col">Material</th>
                       <th scope="col">Unidad</th>
-                      <th scope="col">Precio referencia</th>
+                      <th scope="col">Último precio</th>
                       <th scope="col">Proveedor</th>
                       <th scope="col" aria-label="Acciones" />
                     </tr>
@@ -446,9 +482,20 @@ export function Materiales() {
                           </td>
                           <td>{material.unidad}</td>
                           <td>
-                            {material.precio_referencia === null
-                              ? 'Sin precio'
-                              : formatearMoneda(Number(material.precio_referencia))}
+                            {material.ultimo_precio !== null
+                              ? formatearMoneda(Number(material.ultimo_precio))
+                              : material.precio_referencia !== null
+                                ? formatearMoneda(Number(material.precio_referencia))
+                                : 'Sin precio'}
+                            {material.ultimo_precio !== null &&
+                            material.precio_referencia !== null &&
+                            Number(material.ultimo_precio) !==
+                              Number(material.precio_referencia) ? (
+                              <span className="celda-nota">
+                                Referencia:{' '}
+                                {formatearMoneda(Number(material.precio_referencia))}
+                              </span>
+                            ) : null}
                           </td>
                           <td>
                             {material.url ? (
@@ -493,7 +540,8 @@ export function Materiales() {
                 </table>
               </div>
             )}
-          </section>
+            </section>
+          ) : null}
 
           {consulta.cargando && !consulta.datos ? (
             <Cargando />
@@ -622,6 +670,19 @@ export function Materiales() {
                         </div>
 
                         <div className="campo campo--ancho">
+                          <label className="campo__etiqueta" htmlFor="mov-descripcion">
+                            Descripción del material
+                          </label>
+                          <input
+                            id="mov-descripcion"
+                            className="campo__control"
+                            value={descripcion}
+                            onChange={(evento) => setDescripcion(evento.target.value)}
+                            placeholder="Marca, medida, color o especificación"
+                          />
+                        </div>
+
+                        <div className="campo campo--ancho">
                           <label className="campo__etiqueta" htmlFor="mov-nota">
                             Nota
                           </label>
@@ -675,6 +736,21 @@ export function Materiales() {
                           value={nombreMaterial}
                           onChange={(evento) => setNombreMaterial(evento.target.value)}
                           placeholder="Cemento gris"
+                        />
+                      </div>
+
+                      <div className="campo campo--ancho">
+                        <label className="campo__etiqueta" htmlFor="mat-especificacion">
+                          Descripción del material
+                        </label>
+                        <input
+                          id="mat-especificacion"
+                          className="campo__control"
+                          value={especificacionMaterial}
+                          onChange={(evento) =>
+                            setEspecificacionMaterial(evento.target.value)
+                          }
+                          placeholder="Marca, medida, resistencia o presentación"
                         />
                       </div>
 
@@ -757,6 +833,7 @@ export function Materiales() {
                           <th scope="col">Material</th>
                           <th scope="col">Unidad</th>
                           <th scope="col">Existencia</th>
+                          <th scope="col">Último precio</th>
                           <th scope="col">Mínimo</th>
                           <th scope="col">Estado</th>
                         </tr>
@@ -774,6 +851,11 @@ export function Materiales() {
                               </td>
                               <td>{material.unidad}</td>
                               <td>{existencia.toFixed(2)}</td>
+                              <td>
+                                {material.ultimo_precio !== null
+                                  ? formatearMoneda(Number(material.ultimo_precio))
+                                  : formatearMoneda(Number(material.costo_unitario))}
+                              </td>
                               <td>{Number(material.stock_minimo).toFixed(2)}</td>
                               <td>
                                 {bajo ? (
@@ -815,6 +897,7 @@ export function Materiales() {
                           <th scope="col">Costo unitario</th>
                           <th scope="col">Total</th>
                           <th scope="col">Proveedor</th>
+                          <th scope="col">Descripción</th>
                           <th scope="col">Nota</th>
                         </tr>
                       </thead>
@@ -850,6 +933,7 @@ export function Materiales() {
                               <td>{formatearMoneda(Number(movimiento.costo_unitario))}</td>
                               <td>{formatearMoneda(total)}</td>
                               <td>{movimiento.proveedor ?? '—'}</td>
+                              <td>{movimiento.descripcion ?? '—'}</td>
                               <td>{movimiento.nota ?? '—'}</td>
                             </tr>
                           )

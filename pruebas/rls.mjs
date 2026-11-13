@@ -119,6 +119,18 @@ try {
   ok('0011 catálogo')
   await ejecutar('0011_catalogo_materiales.sql')
   ok('0011 catálogo repetible')
+  await ejecutar('0012_catalogo_ultimo_precio.sql')
+  ok('0012 catálogo y último precio')
+  await ejecutar('0012_catalogo_ultimo_precio.sql')
+  ok('0012 catálogo y último precio repetible')
+  await ejecutar('0013_materiales_solo_gestion.sql')
+  ok('0013 materiales solo gestión')
+  await ejecutar('0013_materiales_solo_gestion.sql')
+  ok('0013 materiales solo gestión repetible')
+  await ejecutar('0014_movimiento_descripcion.sql')
+  ok('0014 descripción de movimiento')
+  await ejecutar('0014_movimiento_descripcion.sql')
+  ok('0014 descripción de movimiento repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -173,6 +185,7 @@ try {
   if (directorioPropio.rows.length === 2) ok('directorio solo de su cuadrilla')
   else fallo('directorio solo de su cuadrilla', `vio ${directorioPropio.rows.length}`)
 
+  await como(MED)
   const materialCreado = await db.query(`
     insert into public.materiales
       (proyecto_id, nombre, unidad, costo_unitario, stock_minimo)
@@ -181,13 +194,13 @@ try {
     returning id
   `)
   const MAT = materialCreado.rows[0].id
-  ok('residente crea material de su obra')
+  ok('oficina crea material de su obra')
 
   await db.query(`
     insert into public.material_movimientos
       (material_id, tipo, cantidad, costo_unitario, proveedor, registrado_por)
     values
-      ('${MAT}', 'entrada', 20, 180, 'Proveedor Demo', '${RES}')
+      ('${MAT}', 'entrada', 20, 180, 'Proveedor Demo', '${MED}')
   `)
   const movimiento = await db.query(
     'select proyecto_id, tipo, cantidad::text, registrado_por from public.material_movimientos where material_id = $1',
@@ -196,12 +209,23 @@ try {
   if (
     movimiento.rows[0]?.proyecto_id === P1 &&
     movimiento.rows[0]?.tipo === 'entrada' &&
-    movimiento.rows[0]?.registrado_por === RES
+    movimiento.rows[0]?.registrado_por === MED
   ) {
     ok('movimiento de material con obra y autor forzados')
   } else {
     fallo('movimiento de material con obra y autor forzados', JSON.stringify(movimiento.rows[0]))
   }
+
+  await como(RES)
+  const materialesResidente = await db.query('select count(*)::int as n from public.materiales')
+  if (materialesResidente.rows[0].n === 1) ok('residente consulta materiales')
+  else fallo('residente consulta materiales', `vio ${materialesResidente.rows[0].n}`)
+
+  await esperarError('residente no crea materiales', () =>
+    db.exec(`insert into public.materiales (proyecto_id, nombre) values ('${P1}', 'Ajeno')`), '42501')
+
+  await esperarError('residente no registra movimientos de material', () =>
+    db.exec(`insert into public.material_movimientos (material_id, tipo, cantidad) values ('${MAT}', 'entrada', 1)`), '42501')
 
   const sinEditarMaterial = await db.query(
     `update public.materiales set costo_unitario = 200 where id = '${MAT}' returning id`,
@@ -503,7 +527,9 @@ try {
   }
 
   await como(ADMIN)
-  const catalogo = await db.query('select count(*)::int as n from public.catalogo_materiales')
+  const catalogo = await db.query(
+    "select count(*)::int as n from public.catalogo_materiales where origen = 'base'",
+  )
   if (catalogo.rows[0].n === 42) ok('catálogo de materiales precargado')
   else fallo('catálogo de materiales precargado', `vio ${catalogo.rows[0].n}`)
 
@@ -525,11 +551,60 @@ try {
   const catalogoResidente = await db.query(
     'select count(*)::int as n from public.catalogo_materiales',
   )
-  if (catalogoResidente.rows[0].n === 42) ok('residente consulta el catálogo')
-  else fallo('residente consulta el catálogo', `vio ${catalogoResidente.rows[0].n}`)
+  if (catalogoResidente.rows[0].n === 0) ok('residente no ve el catálogo global')
+  else fallo('residente no ve el catálogo global', `vio ${catalogoResidente.rows[0].n}`)
+
+  const permisosMateriales = await db.query(
+    "select count(*)::int as n from public.rol_permisos where rol = 'residente' and modulo = 'materiales' and permitido",
+  )
+  if (permisosMateriales.rows[0].n === 1) ok('residente solo consulta materiales')
+  else fallo('residente solo consulta materiales', `permisos ${permisosMateriales.rows[0].n}`)
 
   await esperarError('residente no edita el catálogo global', () =>
     db.exec(`insert into public.catalogo_materiales (codigo, categoria, nombre, unidad) values ('X-1', 'otro', 'Ajeno', 'pieza')`), '42501')
+
+  await como(MED)
+  const materialPropio = await db.query(`
+    insert into public.materiales (proyecto_id, nombre, unidad, costo_unitario)
+    values ('${P1}', 'Material propio', 'pieza', 77)
+    returning id, catalogo_id
+  `)
+  const PROP = materialPropio.rows[0]
+  if (PROP.catalogo_id) ok('material nuevo aprende en el catálogo')
+  else fallo('material nuevo aprende en el catálogo', 'sin catalogo_id')
+
+  await db.query(`
+    insert into public.material_movimientos (material_id, tipo, cantidad, costo_unitario)
+    values ('${PROP.id}', 'entrada', 1, 88)
+  `)
+  const ultimoMaterial = await db.query(
+    'select ultimo_precio::text from public.materiales where id = $1',
+    [PROP.id],
+  )
+
+  await como(MED)
+  const ultimoCatalogo = await db.query(
+    'select ultimo_precio::text, origen from public.catalogo_materiales where codigo = $1',
+    [PROP.catalogo_id],
+  )
+  if (
+    Number(ultimoMaterial.rows[0]?.ultimo_precio) === 88 &&
+    Number(ultimoCatalogo.rows[0]?.ultimo_precio) === 88 &&
+    ultimoCatalogo.rows[0]?.origen === 'propio'
+  ) {
+    ok('último precio guardado en material y catálogo')
+  } else {
+    fallo(
+      'último precio guardado en material y catálogo',
+      JSON.stringify({ material: ultimoMaterial.rows[0], catalogo: ultimoCatalogo.rows[0] }),
+    )
+  }
+
+  const catalogoOficina = await db.query(
+    'select count(*)::int as n from public.catalogo_materiales',
+  )
+  if (catalogoOficina.rows[0].n === 44) ok('oficina ve el catálogo con el material propio')
+  else fallo('oficina ve el catálogo con el material propio', `vio ${catalogoOficina.rows[0].n}`)
 
   await como(ADMIN)
   await esperarError(

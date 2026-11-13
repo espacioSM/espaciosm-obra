@@ -350,6 +350,7 @@ export type DatosMovimientoMaterial = {
   cantidad: number
   costoUnitario: number
   proveedor: string | null
+  descripcion: string | null
   nota: string | null
   usuarioId: string | null
 }
@@ -422,6 +423,7 @@ export async function crearMovimientoMaterial(
     cantidad: datos.cantidad,
     costo_unitario: datos.costoUnitario,
     proveedor: datos.proveedor,
+    descripcion: datos.descripcion,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })

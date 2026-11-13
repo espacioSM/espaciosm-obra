@@ -101,6 +101,8 @@ export type Material = {
   unidad: string
   costo_unitario: number
   stock_minimo: number
+  ultimo_precio: number | null
+  ultimo_precio_en: string | null
   activo: boolean
   creado_por: string | null
   creado_en: string
@@ -115,8 +117,11 @@ export type MaterialCatalogo = {
   unidad: string
   presentacion: string | null
   precio_referencia: number | null
+  ultimo_precio: number | null
+  ultimo_precio_en: string | null
   url: string | null
   activo: boolean
+  origen: string
 }
 
 export type MaterialMovimiento = {
@@ -128,6 +133,7 @@ export type MaterialMovimiento = {
   cantidad: number
   costo_unitario: number
   proveedor: string | null
+  descripcion: string | null
   nota: string | null
   registrado_por: string | null
   creado_en: string
@@ -377,6 +383,8 @@ export type Database = {
           unidad?: string
           costo_unitario?: number
           stock_minimo?: number
+          ultimo_precio?: number | null
+          ultimo_precio_en?: string | null
           activo?: boolean
           creado_por?: string | null
         }
@@ -388,6 +396,8 @@ export type Database = {
           unidad?: string
           costo_unitario?: number
           stock_minimo?: number
+          ultimo_precio?: number | null
+          ultimo_precio_en?: string | null
           activo?: boolean
         }
         Relationships: []
@@ -403,6 +413,7 @@ export type Database = {
           cantidad: number
           costo_unitario?: number
           proveedor?: string | null
+          descripcion?: string | null
           nota?: string | null
           registrado_por?: string | null
         }
@@ -412,6 +423,7 @@ export type Database = {
           cantidad?: number
           costo_unitario?: number
           proveedor?: string | null
+          descripcion?: string | null
           nota?: string | null
         }
         Relationships: []
@@ -426,8 +438,11 @@ export type Database = {
           unidad: string
           presentacion?: string | null
           precio_referencia?: number | null
+          ultimo_precio?: number | null
+          ultimo_precio_en?: string | null
           url?: string | null
           activo?: boolean
+          origen?: string
         }
         Update: {
           categoria?: string
@@ -436,8 +451,11 @@ export type Database = {
           unidad?: string
           presentacion?: string | null
           precio_referencia?: number | null
+          ultimo_precio?: number | null
+          ultimo_precio_en?: string | null
           url?: string | null
           activo?: boolean
+          origen?: string
         }
         Relationships: []
       }
