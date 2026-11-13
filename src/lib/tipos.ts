@@ -196,6 +196,7 @@ export type Estimacion = {
   retencion_porcentaje: number
   estado: EstadoEstimacion
   notas: string | null
+  solicitado_por: string | null
   creado_por: string | null
   creado_en: string
   actualizado_en: string
@@ -630,6 +631,7 @@ export type Database = {
           retencion_porcentaje?: number
           estado?: EstadoEstimacion
           notas?: string | null
+          solicitado_por?: string | null
           creado_por?: string | null
         }
         Update: {
@@ -822,6 +824,26 @@ export type Database = {
         Returns: PartidaDisponible[]
       }
       crear_estimacion_seleccion: {
+        Args: {
+          p_proyecto_id: string
+          p_numero: string
+          p_fecha_inicio: string
+          p_fecha_fin: string
+          p_retencion: number
+          p_notas: string | null
+          p_generador_ids: string[]
+        }
+        Returns: string
+      }
+      previsualizar_solicitud_estimacion: {
+        Args: {
+          p_proyecto_id: string
+          p_fecha_inicio: string
+          p_fecha_fin: string
+        }
+        Returns: PartidaDisponible[]
+      }
+      solicitar_estimacion: {
         Args: {
           p_proyecto_id: string
           p_numero: string

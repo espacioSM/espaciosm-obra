@@ -8,6 +8,8 @@ import {
   listarPartidasEstimacion,
   listarProyectos,
   previsualizarEstimacion,
+  previsualizarSolicitudEstimacion,
+  solicitarEstimacion,
 } from '../datos/consultas'
 import type {
   EstadoEstimacion,
@@ -42,7 +44,7 @@ function calcularTotales(estimacion: Estimacion | null, partidas: EstimacionPart
 }
 
 export function Estimaciones() {
-  const { permisos } = useSesion()
+  const { perfil, permisos } = useSesion()
   const proyectosConsulta = useDatos(listarProyectos, [])
   const proyectos = proyectosConsulta.datos ?? []
   const [proyectoId, setProyectoId] = useState('')
@@ -85,6 +87,7 @@ export function Estimaciones() {
   const puedeVer = permisos.estimaciones?.ver === true
   const puedeCrear = permisos.estimaciones?.crear === true
   const puedeEditar = permisos.estimaciones?.editar === true
+  const esResidente = perfil?.rol === 'residente'
 
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
     null,
@@ -128,11 +131,9 @@ export function Estimaciones() {
     setAviso(null)
 
     try {
-      const partidasDisponibles = await previsualizarEstimacion(
-        proyectoId,
-        fechaInicio,
-        fechaFin,
-      )
+      const partidasDisponibles = esResidente
+        ? await previsualizarSolicitudEstimacion(proyectoId, fechaInicio, fechaFin)
+        : await previsualizarEstimacion(proyectoId, fechaInicio, fechaFin)
       setDisponibles(partidasDisponibles)
       setSeleccionadas(new Set(partidasDisponibles.map((partida) => partida.generador_id)))
       if (partidasDisponibles.length === 0) {
@@ -161,24 +162,41 @@ export function Estimaciones() {
     setAviso(null)
 
     try {
-      const id = await crearEstimacionSeleccion(
-        {
-          proyectoId,
-          numero: numero.trim(),
-          fechaInicio,
-          fechaFin,
-          retencion: retencionNumero,
-          notas: notas.trim() === '' ? null : notas.trim(),
-        },
-        Array.from(seleccionadas),
-      )
+      const id = esResidente
+        ? await solicitarEstimacion(
+            {
+              proyectoId,
+              numero: numero.trim(),
+              fechaInicio,
+              fechaFin,
+              retencion: retencionNumero,
+              notas: notas.trim() === '' ? null : notas.trim(),
+            },
+            Array.from(seleccionadas),
+          )
+        : await crearEstimacionSeleccion(
+            {
+              proyectoId,
+              numero: numero.trim(),
+              fechaInicio,
+              fechaFin,
+              retencion: retencionNumero,
+              notas: notas.trim() === '' ? null : notas.trim(),
+            },
+            Array.from(seleccionadas),
+          )
       setNumero('')
       setNotas('')
       setDisponibles([])
       setSeleccionadas(new Set())
       estimacionesConsulta.recargar()
       setEstimacionId(id)
-      setAviso({ tipo: 'exito', texto: 'Estimación creada con las partidas seleccionadas.' })
+      setAviso({
+        tipo: 'exito',
+        texto: esResidente
+          ? 'Solicitud de estimación enviada a administración.'
+          : 'Estimación creada con las partidas seleccionadas.',
+      })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
@@ -262,9 +280,13 @@ export function Estimaciones() {
             <section className="tarjeta">
               <div className="seccion__cabecera">
                 <div>
-                  <h2 className="seccion__titulo">Nueva estimación</h2>
+                  <h2 className="seccion__titulo">
+                    {esResidente ? 'Solicitar estimación' : 'Nueva estimación'}
+                  </h2>
                   <p className="seccion__nota">
-                    Toma los avances del periodo que aún no se han estimado.
+                    {esResidente
+                      ? 'Toma tus avances validados del periodo y envía la solicitud a administración.'
+                      : 'Toma los avances del periodo que aún no se han estimado.'}
                   </p>
                 </div>
               </div>
@@ -467,7 +489,11 @@ export function Estimaciones() {
                     disabled={creando || seleccionadas.size === 0}
                     onClick={() => void crearSeleccion()}
                   >
-                    {creando ? 'Creando…' : 'Crear estimación seleccionada'}
+                    {creando
+                      ? 'Creando…'
+                      : esResidente
+                        ? 'Enviar solicitud'
+                        : 'Crear estimación seleccionada'}
                   </button>
                 </div>
               </div>

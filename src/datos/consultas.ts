@@ -883,6 +883,39 @@ export async function crearEstimacionSeleccion(
   return data
 }
 
+export async function previsualizarSolicitudEstimacion(
+  proyectoId: string,
+  fechaInicio: string,
+  fechaFin: string,
+): Promise<PartidaDisponible[]> {
+  const { data, error } = await supabase.rpc('previsualizar_solicitud_estimacion', {
+    p_proyecto_id: proyectoId,
+    p_fecha_inicio: fechaInicio,
+    p_fecha_fin: fechaFin,
+  })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function solicitarEstimacion(
+  datos: DatosEstimacion,
+  generadorIds: string[],
+): Promise<string> {
+  const { data, error } = await supabase.rpc('solicitar_estimacion', {
+    p_proyecto_id: datos.proyectoId,
+    p_numero: datos.numero,
+    p_fecha_inicio: datos.fechaInicio,
+    p_fecha_fin: datos.fechaFin,
+    p_retencion: datos.retencion,
+    p_notas: datos.notas,
+    p_generador_ids: generadorIds,
+  })
+
+  if (error) throw error
+  return data
+}
+
 export async function actualizarEstadoEstimacion(
   estimacionId: string,
   estado: EstadoEstimacion,
