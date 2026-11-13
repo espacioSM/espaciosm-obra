@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
@@ -6,11 +6,12 @@ import {
   crearActividadPrograma,
   eliminarActividadPrograma,
   listarActividadesPrograma,
+  listarAvancesGenerador,
   listarGeneradores,
   listarProyectos,
 } from '../datos/consultas'
 import type { Generador, ProgramaActividad } from '../lib/tipos'
-import { formatearFecha, hoyISO } from '../lib/formato'
+import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
@@ -84,6 +85,20 @@ export function Programa() {
   )
   const actividades = consulta.datos ?? []
 
+  const avancesConsulta = useDatos(
+    () => (proyectoId === '' ? Promise.resolve([]) : listarAvancesGenerador(proyectoId)),
+    [proyectoId],
+  )
+  const avances = avancesConsulta.datos ?? []
+  const validadoPorGenerador = new Map<string, number>()
+  for (const avance of avances) {
+    if (avance.estado !== 'validado') continue
+    validadoPorGenerador.set(
+      avance.generador_id,
+      (validadoPorGenerador.get(avance.generador_id) ?? 0) + Number(avance.cantidad),
+    )
+  }
+
   const puedeEditar = permisos.generadores?.editar === true
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
     null,
@@ -97,6 +112,19 @@ export function Programa() {
   const [rendimiento, setRendimiento] = useState('')
   const [fechaInicio, setFechaInicio] = useState(hoyISO())
   const [dependeDeId, setDependeDeId] = useState('')
+  const autoDependencia = useRef(true)
+
+  useEffect(() => {
+    if (
+      autoDependencia.current &&
+      !editandoId &&
+      dependeDeId === '' &&
+      actividades.length > 0
+    ) {
+      setDependeDeId(actividades[actividades.length - 1].id)
+      autoDependencia.current = false
+    }
+  }, [actividades, editandoId, dependeDeId])
 
   function limpiarFormulario() {
     setEditandoId('')
@@ -107,6 +135,7 @@ export function Programa() {
     setRendimiento('')
     setFechaInicio(hoyISO())
     setDependeDeId('')
+    autoDependencia.current = true
   }
 
   function cargarGenerador(id: string) {
@@ -324,6 +353,11 @@ export function Programa() {
     rendimientoVista > 0
       ? Math.max(1, Math.ceil(cantidadVista / rendimientoVista))
       : 0
+  const predecesorForm = actividades.find((actividad) => actividad.id === dependeDeId)
+  const fechasForm =
+    diasVista > 0
+      ? calcularFechas(fechaInicio, cantidadVista, rendimientoVista, predecesorForm)
+      : null
 
   return (
     <div className="pagina">
@@ -522,9 +556,21 @@ export function Programa() {
 
                     <div className="acciones campo--ancho">
                       <span className="seccion__nota">
-                        {diasVista > 0
-                          ? `Duración estimada: ${diasVista} día(s) hábiles (${cantidadVista.toFixed(2)} ${unidad.trim() || 'unidad'} ÷ ${rendimientoVista.toFixed(2)} por día).`
-                          : 'Captura cantidad y rendimiento para calcular la duración.'}
+                        {diasVista > 0 && fechasForm ? (
+                          <>
+                            Duración estimada: {diasVista} día(s) hábiles (
+                            {cantidadVista.toFixed(2)} {unidad.trim() || 'unidad'} ÷{' '}
+                            {rendimientoVista.toFixed(2)} por día).
+                            <br />
+                            Inicio: {formatearFecha(fechasForm.inicio)} · Fin:{' '}
+                            {formatearFecha(fechasForm.fin)}
+                            {predecesorForm
+                              ? ` · Después de "${predecesorForm.nombre}".`
+                              : ''}
+                          </>
+                        ) : (
+                          'Captura cantidad y rendimiento para calcular la duración.'
+                        )}
                       </span>
                     </div>
 
@@ -548,6 +594,59 @@ export function Programa() {
               <section className="tarjeta tarjeta--plana">
                 <div className="seccion__cabecera">
                   <div>
+                    <h2 className="seccion__titulo">Conceptos, importes y avance</h2>
+                    <p className="seccion__nota">
+                      Avance real con avances validados sobre la cantidad contratada.
+                    </p>
+                  </div>
+                </div>
+
+                {generadores.length === 0 ? (
+                  <Vacio titulo="Sin conceptos">
+                    Agrega conceptos al generador para ver importes y avance.
+                  </Vacio>
+                ) : (
+                  <div className="tabla-marco">
+                    <table className="tabla">
+                      <thead>
+                        <tr>
+                          <th scope="col">Concepto</th>
+                          <th scope="col">Importe</th>
+                          <th scope="col">Avance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {generadores.map((generador: Generador) => {
+                          const ejecutado = validadoPorGenerador.get(generador.id) ?? 0
+                          const cantidadContratada = Number(generador.cantidad)
+                          const importe =
+                            cantidadContratada * Number(generador.precio_unitario)
+                          const porcentaje =
+                            cantidadContratada > 0
+                              ? (ejecutado / cantidadContratada) * 100
+                              : 0
+                          return (
+                            <tr key={generador.id}>
+                              <td>
+                                <span className="celda-principal">
+                                  {generador.clave ? `${generador.clave} · ` : ''}
+                                  {generador.descripcion}
+                                </span>
+                              </td>
+                              <td>{formatearMoneda(importe)}</td>
+                              <td>{porcentaje.toFixed(1)}%</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="tarjeta tarjeta--plana">
+                <div className="seccion__cabecera">
+                  <div>
                     <h2 className="seccion__titulo">Actividades programadas</h2>
                     <p className="seccion__nota">
                       {actividades.length} actividad(es) · duración en días laborables.
@@ -560,92 +659,85 @@ export function Programa() {
                     Agrega la primera actividad para generar el programa de obra.
                   </Vacio>
                 ) : (
-                  <div className="tabla-marco">
-                    <table className="tabla">
-                      <thead>
-                        <tr>
-                          <th scope="col">Actividad</th>
-                          <th scope="col">Cantidad</th>
-                          <th scope="col">Rendimiento</th>
-                          <th scope="col">Días</th>
-                          <th scope="col">Inicio</th>
-                          <th scope="col">Fin</th>
-                          <th scope="col">Depende de</th>
-                          <th scope="col">Avance programado</th>
-                          {puedeEditar ? <th scope="col" aria-label="Acciones" /> : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {actividades.map((actividad) => {
-                          const predecesor = actividades.find(
-                            (item) => item.id === actividad.depende_de_id,
-                          )
-                          const ancho =
-                            rango > 0
-                              ? ((fechaLocal(actividad.fecha_fin).getTime() -
-                                  fechaLocal(actividad.fecha_inicio).getTime()) /
-                                  rango) *
-                                100
-                              : 0
-                          const desplazamiento =
-                            rango > 0
-                              ? ((fechaLocal(actividad.fecha_inicio).getTime() - minimo) /
-                                  rango) *
-                                100
-                              : 0
-                          return (
-                            <tr key={actividad.id}>
-                              <td>
-                                <span className="celda-principal">{actividad.nombre}</span>
-                              </td>
-                              <td>
-                                {Number(actividad.cantidad).toFixed(2)} {actividad.unidad}
-                              </td>
-                              <td>
-                                {Number(actividad.rendimiento).toFixed(2)} {actividad.unidad}/día
-                              </td>
-                              <td>
-                                {diasEntre(actividad.fecha_inicio, actividad.fecha_fin)}
-                              </td>
-                              <td>{formatearFecha(actividad.fecha_inicio)}</td>
-                              <td>{formatearFecha(actividad.fecha_fin)}</td>
-                              <td>{predecesor?.nombre ?? '—'}</td>
-                              <td>
-                                <div className="gantt">
-                                  <div
-                                    className="gantt__barra"
-                                    style={{
-                                      marginLeft: `${Math.max(0, desplazamiento)}%`,
-                                      width: `${Math.max(3, ancho)}%`,
-                                    }}
-                                  />
-                                </div>
-                              </td>
-                              {puedeEditar ? (
-                                <td>
-                                  <div className="acciones">
-                                    <button
-                                      type="button"
-                                      className="boton"
-                                      onClick={() => editar(actividad)}
-                                    >
-                                      Editar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="boton boton--peligro"
-                                      onClick={() => void borrar(actividad)}
-                                    >
-                                      Eliminar
-                                    </button>
-                                  </div>
-                                </td>
-                              ) : null}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="programa-lista">
+                    {actividades.map((actividad) => {
+                      const predecesor = actividades.find(
+                        (item) => item.id === actividad.depende_de_id,
+                      )
+                      const ancho =
+                        rango > 0
+                          ? ((fechaLocal(actividad.fecha_fin).getTime() -
+                              fechaLocal(actividad.fecha_inicio).getTime()) /
+                              rango) *
+                            100
+                          : 0
+                      const desplazamiento =
+                        rango > 0
+                          ? ((fechaLocal(actividad.fecha_inicio).getTime() - minimo) /
+                              rango) *
+                            100
+                          : 0
+                      return (
+                        <article className="programa-actividad" key={actividad.id}>
+                          <div className="programa-actividad__cabecera">
+                            <div>
+                              <span className="celda-principal">{actividad.nombre}</span>
+                              <span className="celda-nota">
+                                {Number(actividad.cantidad).toFixed(2)}{' '}
+                                {actividad.unidad} ·{' '}
+                                {Number(actividad.rendimiento).toFixed(2)}{' '}
+                                {actividad.unidad}/día ·{' '}
+                                {diasEntre(actividad.fecha_inicio, actividad.fecha_fin)}{' '}
+                                día(s)
+                              </span>
+                            </div>
+                            {puedeEditar ? (
+                              <div className="acciones">
+                                <button
+                                  type="button"
+                                  className="boton"
+                                  onClick={() => editar(actividad)}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="boton boton--peligro"
+                                  onClick={() => void borrar(actividad)}
+                                >
+                                  Eliminar
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="programa-actividad__datos">
+                            <span>
+                              <strong>Inicio:</strong>{' '}
+                              {formatearFecha(actividad.fecha_inicio)}
+                            </span>
+                            <span>
+                              <strong>Fin:</strong>{' '}
+                              {formatearFecha(actividad.fecha_fin)}
+                            </span>
+                            <span>
+                              <strong>Depende de:</strong>{' '}
+                              {predecesor?.nombre ?? 'Sin dependencia'}
+                            </span>
+                          </div>
+
+                          <div className="gantt">
+                            <div
+                              className="gantt__barra"
+                              style={{
+                                marginLeft: `${Math.max(0, desplazamiento)}%`,
+                                width: `${Math.max(3, ancho)}%`,
+                              }}
+                            />
+                          </div>
+                        </article>
+                      )
+                    })}
                   </div>
                 )}
               </section>

@@ -720,6 +720,34 @@ export async function crearGenerador(datos: DatosGenerador): Promise<Generador> 
   return data
 }
 
+export async function actualizarGenerador(
+  id: string,
+  datos: Omit<DatosGenerador, 'proyectoId'>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('generadores')
+    .update({
+      clave: datos.clave,
+      descripcion: datos.descripcion,
+      unidad: datos.unidad,
+      cantidad: datos.cantidad,
+      precio_unitario: datos.precioUnitario,
+      rendimiento: datos.rendimiento,
+    })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
+export async function desactivarGenerador(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('generadores')
+    .update({ activo: false })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
 export async function listarAvancesGenerador(
   proyectoId: string,
 ): Promise<GeneradorAvance[]> {

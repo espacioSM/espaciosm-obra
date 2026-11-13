@@ -1577,6 +1577,44 @@ a {
   object-fit: cover;
 }
 
+.programa-lista {
+  display: grid;
+  gap: 12px;
+}
+
+.programa-actividad {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 14px;
+}
+
+.programa-actividad__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.programa-actividad__cabecera > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.programa-actividad__datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 12px 0;
+  color: var(--tinta-suave);
+  font-size: 13px;
+}
+
+.programa-actividad__datos strong {
+  color: var(--tinta);
+}
+
 .gantt {
   min-width: 110px;
   height: 12px;

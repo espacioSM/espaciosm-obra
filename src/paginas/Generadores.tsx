@@ -4,14 +4,16 @@ import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
   actualizarAvanceGenerador,
+  actualizarGenerador,
   crearAvanceGenerador,
   crearGenerador,
+  desactivarGenerador,
   listarAvancesGenerador,
   listarGeneradores,
   listarProyectos,
   validarAvanceGenerador,
 } from '../datos/consultas'
-import type { EstadoAvanceGenerador, GeneradorAvance } from '../lib/tipos'
+import type { EstadoAvanceGenerador, Generador, GeneradorAvance } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { subirEvidencia, urlEvidencia } from '../lib/evidencias'
@@ -48,6 +50,7 @@ export function Generadores() {
   const esGestor = perfil?.rol === 'admin' || perfil?.rol === 'permiso_medio'
   const esResidente = perfil?.rol === 'residente'
   const puedeCrearConcepto = esGestor && puedeCrear
+  const puedeEditarConcepto = esGestor && permisos.generadores?.editar === true
   const puedeValidar = esGestor
 
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
@@ -62,6 +65,7 @@ export function Generadores() {
   const [cantidad, setCantidad] = useState('')
   const [precio, setPrecio] = useState('')
   const [rendimiento, setRendimiento] = useState('')
+  const [generadorEditandoId, setGeneradorEditandoId] = useState('')
 
   const [generadorId, setGeneradorId] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
@@ -171,28 +175,72 @@ export function Generadores() {
     setGuardandoGenerador(true)
     setAviso(null)
 
+    const datosConcepto = {
+      clave: clave.trim() === '' ? null : clave.trim(),
+      descripcion: descripcion.trim(),
+      unidad: unidad.trim() === '' ? 'pieza' : unidad.trim(),
+      cantidad: Math.round(cantidadNumero * 100) / 100,
+      precioUnitario: Math.round(precioNumero * 100) / 100,
+      rendimiento: Math.round(rendimientoNumero * 100) / 100,
+    }
+
     try {
-      const generador = await crearGenerador({
-        proyectoId,
-        clave: clave.trim() === '' ? null : clave.trim(),
-        descripcion: descripcion.trim(),
-        unidad: unidad.trim() === '' ? 'pieza' : unidad.trim(),
-        cantidad: Math.round(cantidadNumero * 100) / 100,
-        precioUnitario: Math.round(precioNumero * 100) / 100,
-        rendimiento: Math.round(rendimientoNumero * 100) / 100,
-      })
+      if (generadorEditandoId) {
+        await actualizarGenerador(generadorEditandoId, datosConcepto)
+        setAviso({ tipo: 'exito', texto: 'Concepto actualizado.' })
+      } else {
+        const generador = await crearGenerador({ proyectoId, ...datosConcepto })
+        setGeneradorId(generador.id)
+        setAviso({ tipo: 'exito', texto: 'Concepto agregado al generador.' })
+      }
       setClave('')
       setDescripcion('')
       setCantidad('')
       setPrecio('')
       setRendimiento('')
-      setGeneradorId(generador.id)
+      setGeneradorEditandoId('')
       consulta.recargar()
-      setAviso({ tipo: 'exito', texto: 'Concepto agregado al generador.' })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setGuardandoGenerador(false)
+    }
+  }
+
+  function editarGenerador(generador: Generador) {
+    setGeneradorEditandoId(generador.id)
+    setClave(generador.clave ?? '')
+    setDescripcion(generador.descripcion)
+    setUnidad(generador.unidad)
+    setCantidad(String(generador.cantidad))
+    setPrecio(String(generador.precio_unitario))
+    setRendimiento(String(generador.rendimiento))
+    setAviso(null)
+  }
+
+  function cancelarEdicionGenerador() {
+    setGeneradorEditandoId('')
+    setClave('')
+    setDescripcion('')
+    setCantidad('')
+    setPrecio('')
+    setRendimiento('')
+  }
+
+  async function eliminarGenerador(generador: Generador) {
+    if (
+      !window.confirm(
+        `¿Eliminar el concepto "${generador.descripcion}"? Dejará de aparecer, pero se conserva el historial.`,
+      )
+    ) {
+      return
+    }
+    try {
+      await desactivarGenerador(generador.id)
+      consulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Concepto eliminado del generador.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     }
   }
 
@@ -468,11 +516,22 @@ export function Generadores() {
                     <section className="tarjeta">
                     <div className="seccion__cabecera">
                       <div>
-                        <h2 className="seccion__titulo">Nuevo concepto</h2>
+                        <h2 className="seccion__titulo">
+                          {generadorEditandoId ? 'Editar concepto' : 'Nuevo concepto'}
+                        </h2>
                         <p className="seccion__nota">
-                          Clave, descripción, unidad, cantidad y precio unitario.
+                          Clave, descripción, unidad, cantidad, precio y rendimiento.
                         </p>
                       </div>
+                      {generadorEditandoId ? (
+                        <button
+                          type="button"
+                          className="boton"
+                          onClick={cancelarEdicionGenerador}
+                        >
+                          Cancelar edición
+                        </button>
+                      ) : null}
                     </div>
 
                     <form
@@ -570,7 +629,11 @@ export function Generadores() {
                           className="boton boton--primario"
                           disabled={guardandoGenerador}
                         >
-                          {guardandoGenerador ? 'Guardando…' : 'Agregar concepto'}
+                          {guardandoGenerador
+                            ? 'Guardando…'
+                            : generadorEditandoId
+                              ? 'Guardar cambios'
+                              : 'Agregar concepto'}
                         </button>
                       </div>
                     </form>
@@ -983,6 +1046,9 @@ export function Generadores() {
                           <th scope="col">Ejecutado</th>
                           <th scope="col">Saldo</th>
                           <th scope="col">Avance</th>
+                          {puedeEditarConcepto ? (
+                            <th scope="col" aria-label="Acciones" />
+                          ) : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -1008,6 +1074,26 @@ export function Generadores() {
                               {(Number(generador.cantidad) - ejecutado).toFixed(2)}
                             </td>
                             <td>{porcentaje.toFixed(1)}%</td>
+                            {puedeEditarConcepto ? (
+                              <td>
+                                <div className="tabla__acciones">
+                                  <button
+                                    type="button"
+                                    className="boton"
+                                    onClick={() => editarGenerador(generador)}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="boton boton--peligro"
+                                    onClick={() => void eliminarGenerador(generador)}
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            ) : null}
                           </tr>
                         ))}
                       </tbody>
