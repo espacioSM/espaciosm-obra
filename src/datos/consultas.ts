@@ -3,8 +3,10 @@ import { hoyISO, horaActual } from '../lib/formato'
 import type {
   Asistencia,
   AsistenciaResidente,
+  BajaMaterial,
   DirectorioEmpleado,
   Empleado,
+  EstadoBajaMaterial,
   EstadoEstimacion,
   EstadoProyecto,
   Estimacion,
@@ -426,6 +428,91 @@ export async function crearMovimientoMaterial(
     descripcion: datos.descripcion,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
+  })
+
+  if (error) throw error
+}
+
+export type DatosEdicionMaterial = {
+  nombre: string
+  unidad: string
+  especificacion: string | null
+  presentacion: string | null
+  costoUnitario: number
+  stockMinimo: number
+  activo: boolean
+}
+
+export async function actualizarMaterial(
+  materialId: string,
+  datos: DatosEdicionMaterial,
+): Promise<void> {
+  const { error } = await supabase
+    .from('materiales')
+    .update({
+      nombre: datos.nombre,
+      unidad: datos.unidad,
+      especificacion: datos.especificacion,
+      presentacion: datos.presentacion,
+      costo_unitario: datos.costoUnitario,
+      stock_minimo: datos.stockMinimo,
+      activo: datos.activo,
+    })
+    .eq('id', materialId)
+
+  if (error) throw error
+}
+
+export async function actualizarMovimientoMaterial(
+  movimientoId: string,
+  datos: DatosMovimientoMaterial,
+): Promise<void> {
+  const { error } = await supabase
+    .from('material_movimientos')
+    .update({
+      tipo: datos.tipo,
+      fecha: datos.fecha,
+      cantidad: datos.cantidad,
+      costo_unitario: datos.costoUnitario,
+      proveedor: datos.proveedor,
+      descripcion: datos.descripcion,
+      nota: datos.nota,
+    })
+    .eq('id', movimientoId)
+
+  if (error) throw error
+}
+
+export async function listarBajasMaterial(proyectoId: string): Promise<BajaMaterial[]> {
+  const { data, error } = await supabase.rpc('listar_bajas_material', {
+    p_proyecto_id: proyectoId,
+  })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function solicitarBajaMaterial(
+  materialId: string,
+  motivo: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('solicitar_baja_material', {
+    p_material_id: materialId,
+    p_motivo: motivo,
+  })
+
+  if (error) throw error
+}
+
+export async function responderBajaMaterial(
+  bajaId: string,
+  estado: EstadoBajaMaterial,
+  respuesta: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('responder_baja_material', {
+    p_baja_id: bajaId,
+    p_estado: estado,
+    p_respuesta: respuesta,
   })
 
   if (error) throw error

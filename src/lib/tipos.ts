@@ -199,6 +199,23 @@ export type TipoSolicitud = 'material' | 'personal' | 'equipo' | 'otro'
 export type PrioridadSolicitud = 'baja' | 'media' | 'alta'
 export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada' | 'atendida'
 
+export type EstadoBajaMaterial = 'pendiente' | 'aprobada' | 'rechazada'
+
+export type BajaMaterial = {
+  id: string
+  material_id: string
+  material_nombre: string
+  proyecto_id: string
+  solicitado_por: string
+  solicitante_nombre: string | null
+  solicitante_email: string
+  motivo: string | null
+  estado: EstadoBajaMaterial
+  respuesta: string | null
+  creado_en: string
+  respondido_en: string | null
+}
+
 export type SolicitudRecurso = {
   id: string
   proyecto_id: string
@@ -570,6 +587,23 @@ export type Database = {
         }
         Relationships: []
       }
+      bajas_material: {
+        Row: Omit<BajaMaterial, 'material_nombre' | 'solicitante_nombre' | 'solicitante_email'>
+        Insert: {
+          id?: string
+          material_id: string
+          proyecto_id: string
+          solicitado_por?: string
+          motivo?: string | null
+          estado?: EstadoBajaMaterial
+          respuesta?: string | null
+        }
+        Update: {
+          estado?: EstadoBajaMaterial
+          respuesta?: string | null
+        }
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -629,6 +663,22 @@ export type Database = {
         }
         Returns: undefined
       }
+      solicitar_baja_material: {
+        Args: { p_material_id: string; p_motivo: string }
+        Returns: string
+      }
+      listar_bajas_material: {
+        Args: { p_proyecto_id: string }
+        Returns: BajaMaterial[]
+      }
+      responder_baja_material: {
+        Args: {
+          p_baja_id: string
+          p_estado: EstadoBajaMaterial
+          p_respuesta: string
+        }
+        Returns: undefined
+      }
       rol_actual: {
         Args: Record<PropertyKey, never>
         Returns: Rol | null
@@ -655,6 +705,7 @@ export type Database = {
       tipo_solicitud: TipoSolicitud
       prioridad_solicitud: PrioridadSolicitud
       estado_solicitud: EstadoSolicitud
+      estado_baja_material: EstadoBajaMaterial
       modulo_sistema: Modulo
       accion_sistema: Accion
     }

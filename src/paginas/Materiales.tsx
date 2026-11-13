@@ -2,14 +2,25 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
+  actualizarMaterial,
+  actualizarMovimientoMaterial,
   crearMaterial,
   crearMovimientoMaterial,
+  listarBajasMaterial,
   listarCatalogoMateriales,
   listarMateriales,
   listarMovimientosMaterial,
   listarProyectos,
+  responderBajaMaterial,
+  solicitarBajaMaterial,
 } from '../datos/consultas'
-import type { MaterialCatalogo, TipoMovimientoMaterial } from '../lib/tipos'
+import type {
+  BajaMaterial,
+  Material,
+  MaterialCatalogo,
+  MaterialMovimiento,
+  TipoMovimientoMaterial,
+} from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
@@ -59,6 +70,35 @@ export function Materiales() {
   const catalogo = catalogoConsulta.datos ?? []
   const puedeVer = permisos.materiales?.ver === true
   const puedeCrear = permisos.materiales?.crear === true
+  const puedeEditar = permisos.materiales?.editar === true
+  const esResidente = perfil?.rol === 'residente'
+
+  const bajasConsulta = useDatos(
+    () => (proyectoId === '' ? Promise.resolve([]) : listarBajasMaterial(proyectoId)),
+    [proyectoId],
+  )
+  const bajas = bajasConsulta.datos ?? []
+  const bajasPorMaterial = new Map<string, BajaMaterial>()
+  for (const baja of bajas) {
+    if (!bajasPorMaterial.has(baja.material_id)) {
+      bajasPorMaterial.set(baja.material_id, baja)
+    }
+  }
+
+  const [materialEditando, setMaterialEditando] = useState<Material | null>(null)
+  const [editNombre, setEditNombre] = useState('')
+  const [editEspecificacion, setEditEspecificacion] = useState('')
+  const [editUnidad, setEditUnidad] = useState('pieza')
+  const [editCosto, setEditCosto] = useState('')
+  const [editMinimo, setEditMinimo] = useState('0')
+  const [editActivo, setEditActivo] = useState(true)
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+
+  const [movimientoEditando, setMovimientoEditando] =
+    useState<MaterialMovimiento | null>(null)
+  const [respuestasBaja, setRespuestasBaja] = useState<Record<string, string>>({})
+  const [respondiendoBaja, setRespondiendoBaja] = useState<string | null>(null)
+  const [solicitandoBaja, setSolicitandoBaja] = useState<string | null>(null)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
   const [busquedaCatalogo, setBusquedaCatalogo] = useState('')
@@ -288,18 +328,25 @@ export function Materiales() {
     setGuardandoMovimiento(true)
     setAviso(null)
 
+    const datos = {
+      materialId,
+      tipo,
+      fecha,
+      cantidad: Math.round(cantidadNumero * 100) / 100,
+      costoUnitario: Math.round(costoNumero * 100) / 100,
+      proveedor: proveedor.trim() === '' ? null : proveedor.trim(),
+      descripcion: descripcion.trim() === '' ? null : descripcion.trim(),
+      nota: nota.trim() === '' ? null : nota.trim(),
+      usuarioId,
+    }
+
     try {
-      await crearMovimientoMaterial({
-        materialId,
-        tipo,
-        fecha,
-        cantidad: Math.round(cantidadNumero * 100) / 100,
-        costoUnitario: Math.round(costoNumero * 100) / 100,
-        proveedor: proveedor.trim() === '' ? null : proveedor.trim(),
-        descripcion: descripcion.trim() === '' ? null : descripcion.trim(),
-        nota: nota.trim() === '' ? null : nota.trim(),
-        usuarioId,
-      })
+      if (movimientoEditando) {
+        await actualizarMovimientoMaterial(movimientoEditando.id, datos)
+      } else {
+        await crearMovimientoMaterial(datos)
+      }
+      setMovimientoEditando(null)
       setCantidad('')
       setProveedor('')
       setDescripcion('')
@@ -308,12 +355,126 @@ export function Materiales() {
       catalogoConsulta.recargar()
       setAviso({
         tipo: 'exito',
-        texto: tipo === 'entrada' ? 'Entrada registrada.' : 'Salida registrada.',
+        texto: movimientoEditando
+          ? 'Movimiento corregido.'
+          : tipo === 'entrada'
+            ? 'Entrada registrada.'
+            : 'Salida registrada.',
       })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setGuardandoMovimiento(false)
+    }
+  }
+
+  function editarMovimiento(movimiento: MaterialMovimiento) {
+    setMovimientoEditando(movimiento)
+    setMaterialId(movimiento.material_id)
+    setTipo(movimiento.tipo)
+    setFecha(movimiento.fecha)
+    setCantidad(String(movimiento.cantidad))
+    setCostoMovimiento(String(movimiento.costo_unitario))
+    setProveedor(movimiento.proveedor ?? '')
+    setDescripcion(movimiento.descripcion ?? '')
+    setNota(movimiento.nota ?? '')
+    setAviso(null)
+    window.setTimeout(() => {
+      movimientoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      cantidadRef.current?.focus()
+    }, 100)
+  }
+
+  function abrirEdicionMaterial(material: Material) {
+    setMaterialEditando(material)
+    setEditNombre(material.nombre)
+    setEditEspecificacion(material.especificacion ?? '')
+    setEditUnidad(material.unidad)
+    setEditCosto(String(material.costo_unitario))
+    setEditMinimo(String(material.stock_minimo))
+    setEditActivo(material.activo)
+    setAviso(null)
+  }
+
+  async function guardarEdicionMaterial(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+    if (!materialEditando) return
+
+    if (editNombre.trim() === '') {
+      setAviso({ tipo: 'error', texto: 'El nombre del material es obligatorio.' })
+      return
+    }
+
+    const costo = Number(editCosto)
+    const minimo = Number(editMinimo)
+    if (!Number.isFinite(costo) || costo < 0 || !Number.isFinite(minimo) || minimo < 0) {
+      setAviso({ tipo: 'error', texto: 'Revisa el costo y el stock mínimo.' })
+      return
+    }
+
+    setGuardandoEdicion(true)
+    setAviso(null)
+
+    try {
+      await actualizarMaterial(materialEditando.id, {
+        nombre: editNombre.trim(),
+        unidad: editUnidad.trim() === '' ? 'pieza' : editUnidad.trim(),
+        especificacion:
+          editEspecificacion.trim() === '' ? null : editEspecificacion.trim(),
+        presentacion: materialEditando.presentacion,
+        costoUnitario: Math.round(costo * 100) / 100,
+        stockMinimo: Math.round(minimo * 100) / 100,
+        activo: editActivo,
+      })
+      setMaterialEditando(null)
+      consulta.recargar()
+      catalogoConsulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Material actualizado.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setGuardandoEdicion(false)
+    }
+  }
+
+  async function solicitarBaja(material: Material) {
+    const motivo = window.prompt(
+      `Motivo de la baja de "${material.nombre}" (opcional):`,
+      '',
+    )
+    if (motivo === null) return
+
+    setSolicitandoBaja(material.id)
+    setAviso(null)
+
+    try {
+      await solicitarBajaMaterial(material.id, motivo)
+      bajasConsulta.recargar()
+      consulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Solicitud de baja enviada.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setSolicitandoBaja(null)
+    }
+  }
+
+  async function responderBaja(baja: BajaMaterial, estado: 'aprobada' | 'rechazada') {
+    setRespondiendoBaja(baja.id)
+    setAviso(null)
+
+    try {
+      await responderBajaMaterial(baja.id, estado, respuestasBaja[baja.id] ?? '')
+      bajasConsulta.recargar()
+      consulta.recargar()
+      setAviso({
+        tipo: 'exito',
+        texto: estado === 'aprobada' ? 'Baja aprobada.' : 'Baja rechazada.',
+      })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setRespondiendoBaja(null)
     }
   }
 
@@ -551,9 +712,13 @@ export function Materiales() {
                 <section className="tarjeta" ref={movimientoRef}>
                   <div className="seccion__cabecera">
                     <div>
-                      <h2 className="seccion__titulo">Registrar movimiento</h2>
+                      <h2 className="seccion__titulo">
+                        {movimientoEditando ? 'Editar movimiento' : 'Registrar movimiento'}
+                      </h2>
                       <p className="seccion__nota">
-                        Entrada al recibir material; salida al usarlo en la obra.
+                        {movimientoEditando
+                          ? 'Corrige el tipo, la cantidad, el costo o los datos del movimiento.'
+                          : 'Entrada al recibir material; salida al usarlo en la obra.'}
                       </p>
                     </div>
                   </div>
@@ -701,8 +866,27 @@ export function Materiales() {
                             className="boton boton--primario"
                             disabled={guardandoMovimiento}
                           >
-                            {guardandoMovimiento ? 'Guardando…' : 'Guardar movimiento'}
+                            {guardandoMovimiento
+                              ? 'Guardando…'
+                              : movimientoEditando
+                                ? 'Guardar cambios'
+                                : 'Guardar movimiento'}
                           </button>
+                          {movimientoEditando ? (
+                            <button
+                              type="button"
+                              className="boton boton--tenue"
+                              onClick={() => {
+                                setMovimientoEditando(null)
+                                setCantidad('')
+                                setProveedor('')
+                                setDescripcion('')
+                                setNota('')
+                              }}
+                            >
+                              Cancelar edición
+                            </button>
+                          ) : null}
                         </div>
                       </form>
                     )
@@ -811,6 +995,175 @@ export function Materiales() {
                 </section>
               </div>
 
+              {puedeEditar && materialEditando ? (
+                <section className="tarjeta">
+                  <div className="seccion__cabecera">
+                    <div>
+                      <h2 className="seccion__titulo">Editar material</h2>
+                      <p className="seccion__nota">
+                        Corrige nombre, unidad, descripción, costo, mínimo o estado.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    className="formulario"
+                    onSubmit={(evento) => void guardarEdicionMaterial(evento)}
+                  >
+                    <div className="campo campo--ancho">
+                      <label className="campo__etiqueta" htmlFor="edit-nombre">
+                        Nombre
+                      </label>
+                      <input
+                        id="edit-nombre"
+                        className="campo__control"
+                        value={editNombre}
+                        onChange={(evento) => setEditNombre(evento.target.value)}
+                      />
+                    </div>
+
+                    <div className="campo campo--ancho">
+                      <label className="campo__etiqueta" htmlFor="edit-especificacion">
+                        Descripción del material
+                      </label>
+                      <input
+                        id="edit-especificacion"
+                        className="campo__control"
+                        value={editEspecificacion}
+                        onChange={(evento) => setEditEspecificacion(evento.target.value)}
+                      />
+                    </div>
+
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="edit-unidad">
+                        Unidad
+                      </label>
+                      <input
+                        id="edit-unidad"
+                        className="campo__control"
+                        value={editUnidad}
+                        onChange={(evento) => setEditUnidad(evento.target.value)}
+                      />
+                    </div>
+
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="edit-costo">
+                        Costo unitario
+                      </label>
+                      <input
+                        id="edit-costo"
+                        className="campo__control"
+                        inputMode="decimal"
+                        value={editCosto}
+                        onChange={(evento) => setEditCosto(evento.target.value)}
+                      />
+                    </div>
+
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="edit-minimo">
+                        Stock mínimo
+                      </label>
+                      <input
+                        id="edit-minimo"
+                        className="campo__control"
+                        inputMode="decimal"
+                        value={editMinimo}
+                        onChange={(evento) => setEditMinimo(evento.target.value)}
+                      />
+                    </div>
+
+                    <label className="casilla">
+                      <input
+                        type="checkbox"
+                        checked={editActivo}
+                        onChange={(evento) => setEditActivo(evento.target.checked)}
+                      />
+                      Material activo
+                    </label>
+
+                    <div className="acciones campo--ancho">
+                      <button
+                        type="submit"
+                        className="boton boton--primario"
+                        disabled={guardandoEdicion}
+                      >
+                        {guardandoEdicion ? 'Guardando…' : 'Guardar cambios'}
+                      </button>
+                      <button
+                        type="button"
+                        className="boton boton--tenue"
+                        onClick={() => setMaterialEditando(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ) : null}
+
+              {puedeEditar && bajas.some((baja) => baja.estado === 'pendiente') ? (
+                <section className="tarjeta">
+                  <div className="seccion__cabecera">
+                    <div>
+                      <h2 className="seccion__titulo">Solicitudes de baja</h2>
+                      <p className="seccion__nota">
+                        El residente pide retirar un material; revisa el motivo y responde.
+                      </p>
+                    </div>
+                  </div>
+
+                  {bajas
+                    .filter((baja) => baja.estado === 'pendiente')
+                    .map((baja) => (
+                      <div className="tarjeta tarjeta--plana" key={baja.id}>
+                        <p>
+                          <strong>{baja.material_nombre}</strong> ·{' '}
+                          {baja.solicitante_nombre ?? baja.solicitante_email}
+                        </p>
+                        <p className="seccion__nota">
+                          Motivo: {baja.motivo ?? 'Sin motivo indicado'}
+                        </p>
+                        <div className="campo">
+                          <label className="campo__etiqueta" htmlFor={`baja-${baja.id}`}>
+                            Respuesta
+                          </label>
+                          <textarea
+                            id={`baja-${baja.id}`}
+                            className="campo__control"
+                            rows={2}
+                            value={respuestasBaja[baja.id] ?? ''}
+                            onChange={(evento) =>
+                              setRespuestasBaja((previas) => ({
+                                ...previas,
+                                [baja.id]: evento.target.value,
+                              }))
+                            }
+                            placeholder="Comentario para el residente"
+                          />
+                        </div>
+                        <div className="acciones">
+                          <button
+                            type="button"
+                            className="boton boton--primario"
+                            disabled={respondiendoBaja !== null}
+                            onClick={() => void responderBaja(baja, 'aprobada')}
+                          >
+                            {respondiendoBaja === baja.id ? 'Guardando…' : 'Aprobar baja'}
+                          </button>
+                          <button
+                            type="button"
+                            className="boton boton--peligro"
+                            disabled={respondiendoBaja !== null}
+                            onClick={() => void responderBaja(baja, 'rechazada')}
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </section>
+              ) : null}
+
               <section className="tarjeta tarjeta--plana">
                 <div className="seccion__cabecera">
                   <div>
@@ -836,6 +1189,7 @@ export function Materiales() {
                           <th scope="col">Último precio</th>
                           <th scope="col">Mínimo</th>
                           <th scope="col">Estado</th>
+                          <th scope="col" aria-label="Acciones" />
                         </tr>
                       </thead>
                       <tbody>
@@ -863,6 +1217,33 @@ export function Materiales() {
                                 ) : (
                                   <Insignia tono="en_ejecucion">Suficiente</Insignia>
                                 )}
+                              </td>
+                              <td>
+                                {puedeEditar ? (
+                                  <button
+                                    type="button"
+                                    className="boton"
+                                    onClick={() => abrirEdicionMaterial(material)}
+                                  >
+                                    Editar
+                                  </button>
+                                ) : null}
+                                {esResidente ? (
+                                  bajasPorMaterial.get(material.id)?.estado === 'pendiente' ? (
+                                    <Insignia tono="alerta">Baja pendiente</Insignia>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="boton"
+                                      disabled={solicitandoBaja === material.id}
+                                      onClick={() => void solicitarBaja(material)}
+                                    >
+                                      {solicitandoBaja === material.id
+                                        ? 'Enviando…'
+                                        : 'Solicitar baja'}
+                                    </button>
+                                  )
+                                ) : null}
                               </td>
                             </tr>
                           )
@@ -899,6 +1280,7 @@ export function Materiales() {
                           <th scope="col">Proveedor</th>
                           <th scope="col">Descripción</th>
                           <th scope="col">Nota</th>
+                          {puedeEditar ? <th scope="col" aria-label="Acciones" /> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -935,6 +1317,17 @@ export function Materiales() {
                               <td>{movimiento.proveedor ?? '—'}</td>
                               <td>{movimiento.descripcion ?? '—'}</td>
                               <td>{movimiento.nota ?? '—'}</td>
+                              {puedeEditar ? (
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="boton"
+                                    onClick={() => editarMovimiento(movimiento)}
+                                  >
+                                    Editar
+                                  </button>
+                                </td>
+                              ) : null}
                             </tr>
                           )
                         })}

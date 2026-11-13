@@ -131,6 +131,10 @@ try {
   ok('0014 descripción de movimiento')
   await ejecutar('0014_movimiento_descripcion.sql')
   ok('0014 descripción de movimiento repetible')
+  await ejecutar('0015_bajas_material.sql')
+  ok('0015 bajas de material')
+  await ejecutar('0015_bajas_material.sql')
+  ok('0015 bajas de material repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -605,6 +609,68 @@ try {
   )
   if (catalogoOficina.rows[0].n === 44) ok('oficina ve el catálogo con el material propio')
   else fallo('oficina ve el catálogo con el material propio', `vio ${catalogoOficina.rows[0].n}`)
+
+  await como(RES)
+  const solicitudBaja = await db.query(
+    `select public.solicitar_baja_material('${PROP.id}', 'Material dañado') as id`,
+  )
+  const idBaja = solicitudBaja.rows[0].id
+  const bajasResidente = await db.query(
+    "select * from public.listar_bajas_material('" + P1 + "')",
+  )
+  if (
+    bajasResidente.rows.length === 1 &&
+    bajasResidente.rows[0].estado === 'pendiente'
+  ) {
+    ok('residente solicita baja de material')
+  } else {
+    fallo('residente solicita baja de material', JSON.stringify(bajasResidente.rows))
+  }
+
+  await esperarError('residente no responde bajas', () =>
+    db.exec(`select public.responder_baja_material('${idBaja}', 'aprobada', 'No')`), '42501')
+
+  await como(MED)
+  const bajasOficina = await db.query(
+    "select * from public.listar_bajas_material('" + P1 + "')",
+  )
+  if (bajasOficina.rows.length === 1) ok('oficina ve la solicitud de baja')
+  else fallo('oficina ve la solicitud de baja', `vio ${bajasOficina.rows.length}`)
+
+  await db.query(
+    `select public.responder_baja_material('${idBaja}', 'aprobada', 'Aprobada')`,
+  )
+  const materialBaja = await db.query(
+    'select activo from public.materiales where id = $1',
+    [PROP.id],
+  )
+  if (materialBaja.rows[0]?.activo === false) ok('oficina aprueba la baja')
+  else fallo('oficina aprueba la baja', JSON.stringify(materialBaja.rows[0]))
+
+  const materialEditado = await db.query(
+    `update public.materiales set unidad = 'kg' where id = '${PROP.id}' returning id`,
+  )
+  const movimientoEditado = await db.query(
+    `update public.material_movimientos set nota = 'corregida' where material_id = '${PROP.id}' returning id`,
+  )
+  if (materialEditado.rows.length === 1 && movimientoEditado.rows.length === 1) {
+    ok('oficina corrige material y movimiento')
+  } else {
+    fallo('oficina corrige material y movimiento', 'no actualizó')
+  }
+
+  await como(RES)
+  const intentoMaterial = await db.query(
+    `update public.materiales set unidad = 'otra' where id = '${PROP.id}' returning id`,
+  )
+  const intentoMovimiento = await db.query(
+    `update public.material_movimientos set nota = 'otra' where material_id = '${PROP.id}' returning id`,
+  )
+  if (intentoMaterial.rows.length === 0 && intentoMovimiento.rows.length === 0) {
+    ok('residente no corrige inventario')
+  } else {
+    fallo('residente no corrige inventario', 'actualizó una fila')
+  }
 
   await como(ADMIN)
   await esperarError(
