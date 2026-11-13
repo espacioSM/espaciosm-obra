@@ -98,7 +98,10 @@ export function Materiales() {
     useState<MaterialMovimiento | null>(null)
   const [respuestasBaja, setRespuestasBaja] = useState<Record<string, string>>({})
   const [respondiendoBaja, setRespondiendoBaja] = useState<string | null>(null)
-  const [solicitandoBaja, setSolicitandoBaja] = useState<string | null>(null)
+  const [materialBaja, setMaterialBaja] = useState<Material | null>(null)
+  const [cantidadBaja, setCantidadBaja] = useState('')
+  const [motivoBaja, setMotivoBaja] = useState('')
+  const [enviandoBaja, setEnviandoBaja] = useState(false)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
   const [busquedaCatalogo, setBusquedaCatalogo] = useState('')
@@ -437,26 +440,43 @@ export function Materiales() {
     }
   }
 
-  async function solicitarBaja(material: Material) {
-    const motivo = window.prompt(
-      `Motivo de la baja de "${material.nombre}" (opcional):`,
-      '',
-    )
-    if (motivo === null) return
+  async function solicitarBaja(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+    if (!materialBaja) return
 
-    setSolicitandoBaja(material.id)
+    const cantidadNumero = Number(cantidadBaja)
+    if (!Number.isFinite(cantidadNumero) || cantidadNumero <= 0) {
+      setAviso({ tipo: 'error', texto: 'La cantidad de baja debe ser mayor que cero.' })
+      return
+    }
+
+    setEnviandoBaja(true)
     setAviso(null)
 
     try {
-      await solicitarBajaMaterial(material.id, motivo)
+      await solicitarBajaMaterial(
+        materialBaja.id,
+        motivoBaja.trim(),
+        Math.round(cantidadNumero * 100) / 100,
+      )
+      setMaterialBaja(null)
+      setCantidadBaja('')
+      setMotivoBaja('')
       bajasConsulta.recargar()
       consulta.recargar()
       setAviso({ tipo: 'exito', texto: 'Solicitud de baja enviada.' })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
-      setSolicitandoBaja(null)
+      setEnviandoBaja(false)
     }
+  }
+
+  function abrirBaja(material: Material) {
+    setMaterialBaja(material)
+    setCantidadBaja('')
+    setMotivoBaja('')
+    setAviso(null)
   }
 
   async function responderBaja(baja: BajaMaterial, estado: 'aprobada' | 'rechazada') {
@@ -1101,6 +1121,68 @@ export function Materiales() {
                 </section>
               ) : null}
 
+              {esResidente && materialBaja ? (
+                <section className="tarjeta">
+                  <div className="seccion__cabecera">
+                    <div>
+                      <h2 className="seccion__titulo">Solicitar baja de material</h2>
+                      <p className="seccion__nota">
+                        {materialBaja.nombre} · {materialBaja.unidad}
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    className="formulario"
+                    onSubmit={(evento) => void solicitarBaja(evento)}
+                  >
+                    <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="baja-cantidad">
+                        Cantidad que se da de baja
+                      </label>
+                      <input
+                        id="baja-cantidad"
+                        className="campo__control"
+                        inputMode="decimal"
+                        value={cantidadBaja}
+                        onChange={(evento) => setCantidadBaja(evento.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    <div className="campo campo--ancho">
+                      <label className="campo__etiqueta" htmlFor="baja-motivo">
+                        Motivo
+                      </label>
+                      <input
+                        id="baja-motivo"
+                        className="campo__control"
+                        value={motivoBaja}
+                        onChange={(evento) => setMotivoBaja(evento.target.value)}
+                        placeholder="Material dañado, faltante, robo…"
+                      />
+                    </div>
+
+                    <div className="acciones campo--ancho">
+                      <button
+                        type="submit"
+                        className="boton boton--primario"
+                        disabled={enviandoBaja}
+                      >
+                        {enviandoBaja ? 'Enviando…' : 'Enviar solicitud'}
+                      </button>
+                      <button
+                        type="button"
+                        className="boton boton--tenue"
+                        onClick={() => setMaterialBaja(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ) : null}
+
               {puedeEditar && bajas.some((baja) => baja.estado === 'pendiente') ? (
                 <section className="tarjeta">
                   <div className="seccion__cabecera">
@@ -1121,7 +1203,8 @@ export function Materiales() {
                           {baja.solicitante_nombre ?? baja.solicitante_email}
                         </p>
                         <p className="seccion__nota">
-                          Motivo: {baja.motivo ?? 'Sin motivo indicado'}
+                          Cantidad: {Number(baja.cantidad ?? 0).toFixed(2)} · Motivo:{' '}
+                          {baja.motivo ?? 'Sin motivo indicado'}
                         </p>
                         <div className="campo">
                           <label className="campo__etiqueta" htmlFor={`baja-${baja.id}`}>
@@ -1202,6 +1285,9 @@ export function Materiales() {
                                 <span className="celda-nota">
                                   {material.especificacion ?? material.unidad}
                                 </span>
+                                {bajasPorMaterial.get(material.id)?.estado === 'aprobada' ? (
+                                  <Insignia tono="alerta">Baja</Insignia>
+                                ) : null}
                               </td>
                               <td>{material.unidad}</td>
                               <td>{existencia.toFixed(2)}</td>
@@ -1235,12 +1321,9 @@ export function Materiales() {
                                     <button
                                       type="button"
                                       className="boton"
-                                      disabled={solicitandoBaja === material.id}
-                                      onClick={() => void solicitarBaja(material)}
+                                      onClick={() => abrirBaja(material)}
                                     >
-                                      {solicitandoBaja === material.id
-                                        ? 'Enviando…'
-                                        : 'Solicitar baja'}
+                                      Solicitar baja
                                     </button>
                                   )
                                 ) : null}
@@ -1289,16 +1372,25 @@ export function Materiales() {
                           const total =
                             Number(movimiento.cantidad) * Number(movimiento.costo_unitario)
                           return (
-                            <tr key={movimiento.id}>
+                            <tr
+                              key={movimiento.id}
+                              className={movimiento.es_baja ? 'fila-baja' : undefined}
+                            >
                               <td>{formatearFecha(movimiento.fecha)}</td>
                               <td>
-                                <Insignia
-                                  tono={
-                                    movimiento.tipo === 'entrada' ? 'en_ejecucion' : 'tenue'
-                                  }
-                                >
-                                  {movimiento.tipo === 'entrada' ? 'Entrada' : 'Salida'}
-                                </Insignia>
+                                {movimiento.es_baja ? (
+                                  <Insignia tono="alerta">Baja</Insignia>
+                                ) : (
+                                  <Insignia
+                                    tono={
+                                      movimiento.tipo === 'entrada'
+                                        ? 'en_ejecucion'
+                                        : 'tenue'
+                                    }
+                                  >
+                                    {movimiento.tipo === 'entrada' ? 'Entrada' : 'Salida'}
+                                  </Insignia>
+                                )}
                               </td>
                               <td>
                                 <span className="celda-principal">

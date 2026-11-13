@@ -1524,3 +1524,7 @@ a {
     padding: 24px 20px;
   }
 }
+
+.fila-baja td {
+  color: var(--rojo);
+}

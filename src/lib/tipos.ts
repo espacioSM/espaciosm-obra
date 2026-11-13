@@ -135,6 +135,8 @@ export type MaterialMovimiento = {
   proveedor: string | null
   descripcion: string | null
   nota: string | null
+  es_baja: boolean
+  baja_id: string | null
   registrado_por: string | null
   creado_en: string
   actualizado_en: string
@@ -210,6 +212,7 @@ export type BajaMaterial = {
   solicitante_nombre: string | null
   solicitante_email: string
   motivo: string | null
+  cantidad: number | null
   estado: EstadoBajaMaterial
   respuesta: string | null
   creado_en: string
@@ -432,6 +435,8 @@ export type Database = {
           proveedor?: string | null
           descripcion?: string | null
           nota?: string | null
+          es_baja?: boolean
+          baja_id?: string | null
           registrado_por?: string | null
         }
         Update: {
@@ -442,6 +447,8 @@ export type Database = {
           proveedor?: string | null
           descripcion?: string | null
           nota?: string | null
+          es_baja?: boolean
+          baja_id?: string | null
         }
         Relationships: []
       }
@@ -595,6 +602,7 @@ export type Database = {
           proyecto_id: string
           solicitado_por?: string
           motivo?: string | null
+          cantidad?: number | null
           estado?: EstadoBajaMaterial
           respuesta?: string | null
         }
@@ -664,7 +672,7 @@ export type Database = {
         Returns: undefined
       }
       solicitar_baja_material: {
-        Args: { p_material_id: string; p_motivo: string }
+        Args: { p_material_id: string; p_motivo: string; p_cantidad: number }
         Returns: string
       }
       listar_bajas_material: {

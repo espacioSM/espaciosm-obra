@@ -135,6 +135,10 @@ try {
   ok('0015 bajas de material')
   await ejecutar('0015_bajas_material.sql')
   ok('0015 bajas de material repetible')
+  await ejecutar('0016_baja_cantidad.sql')
+  ok('0016 baja con cantidad')
+  await ejecutar('0016_baja_cantidad.sql')
+  ok('0016 baja con cantidad repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -612,7 +616,7 @@ try {
 
   await como(RES)
   const solicitudBaja = await db.query(
-    `select public.solicitar_baja_material('${PROP.id}', 'Material dañado') as id`,
+    `select public.solicitar_baja_material('${PROP.id}', 'Material dañado', 1) as id`,
   )
   const idBaja = solicitudBaja.rows[0].id
   const bajasResidente = await db.query(
@@ -644,14 +648,28 @@ try {
     'select activo from public.materiales where id = $1',
     [PROP.id],
   )
-  if (materialBaja.rows[0]?.activo === false) ok('oficina aprueba la baja')
-  else fallo('oficina aprueba la baja', JSON.stringify(materialBaja.rows[0]))
+  const movimientoBaja = await db.query(
+    'select es_baja, cantidad::text from public.material_movimientos where baja_id = $1',
+    [idBaja],
+  )
+  if (
+    materialBaja.rows[0]?.activo === true &&
+    movimientoBaja.rows[0]?.es_baja === true &&
+    Number(movimientoBaja.rows[0]?.cantidad) === 1
+  ) {
+    ok('oficina aprueba la baja y descuenta inventario')
+  } else {
+    fallo(
+      'oficina aprueba la baja y descuenta inventario',
+      JSON.stringify({ material: materialBaja.rows[0], movimiento: movimientoBaja.rows[0] }),
+    )
+  }
 
   const materialEditado = await db.query(
     `update public.materiales set unidad = 'kg' where id = '${PROP.id}' returning id`,
   )
   const movimientoEditado = await db.query(
-    `update public.material_movimientos set nota = 'corregida' where material_id = '${PROP.id}' returning id`,
+    `update public.material_movimientos set nota = 'corregida' where material_id = '${PROP.id}' and es_baja = false returning id`,
   )
   if (materialEditado.rows.length === 1 && movimientoEditado.rows.length === 1) {
     ok('oficina corrige material y movimiento')

@@ -495,10 +495,12 @@ export async function listarBajasMaterial(proyectoId: string): Promise<BajaMater
 export async function solicitarBajaMaterial(
   materialId: string,
   motivo: string,
+  cantidad: number,
 ): Promise<void> {
   const { error } = await supabase.rpc('solicitar_baja_material', {
     p_material_id: materialId,
     p_motivo: motivo,
+    p_cantidad: cantidad,
   })
 
   if (error) throw error
