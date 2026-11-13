@@ -30,6 +30,7 @@ export const NAVEGACION: GrupoNavegacion[] = [
       { ruta: '/materiales', etiqueta: 'Materiales', modulo: 'materiales' },
       { ruta: '/generadores', etiqueta: 'Generadores', modulo: 'generadores' },
       { ruta: '/programa', etiqueta: 'Programa', modulo: 'generadores' },
+      { ruta: '/avance', etiqueta: 'Avance', modulo: 'generadores' },
       { ruta: '/estimaciones', etiqueta: 'Estimaciones', modulo: 'estimaciones' },
       {
         ruta: '/solicitudes',

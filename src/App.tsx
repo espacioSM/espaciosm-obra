@@ -18,6 +18,7 @@ import { Bitacora } from './paginas/Bitacora'
 import { Reportes } from './paginas/Reportes'
 import { Presupuesto } from './paginas/Presupuesto'
 import { Programa } from './paginas/Programa'
+import { Avance } from './paginas/Avance'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="materiales" element={<Materiales />} />
               <Route path="generadores" element={<Generadores />} />
               <Route path="programa" element={<Programa />} />
+              <Route path="avance" element={<Avance />} />
               <Route path="estimaciones" element={<Estimaciones />} />
               <Route path="solicitudes" element={<Solicitudes />} />
               <Route path="pagos" element={<Pagos />} />
