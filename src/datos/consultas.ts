@@ -6,6 +6,7 @@ import type {
   BajaMaterial,
   DirectorioEmpleado,
   Empleado,
+  EstadoAvanceGenerador,
   EstadoBajaMaterial,
   EstadoEstimacion,
   EstadoProyecto,
@@ -537,6 +538,16 @@ export type DatosAvanceGenerador = {
   generadorId: string
   fecha: string
   cantidad: number
+  nivel: string | null
+  eje: string | null
+  tramo: string | null
+  frente: string | null
+  largo: number | null
+  ancho: number | null
+  alto: number | null
+  piezas: number | null
+  estado: EstadoAvanceGenerador
+  observaciones: string | null
   nota: string | null
   usuarioId: string | null
 }
@@ -593,9 +604,35 @@ export async function crearAvanceGenerador(
     generador_id: datos.generadorId,
     fecha: datos.fecha,
     cantidad: datos.cantidad,
+    nivel: datos.nivel,
+    eje: datos.eje,
+    tramo: datos.tramo,
+    frente: datos.frente,
+    largo: datos.largo,
+    ancho: datos.ancho,
+    alto: datos.alto,
+    piezas: datos.piezas,
+    estado: datos.estado,
+    observaciones: datos.observaciones,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
+
+  if (error) throw error
+}
+
+export async function validarAvanceGenerador(
+  avanceId: string,
+  estado: EstadoAvanceGenerador,
+  observaciones: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('generador_avances')
+    .update({
+      estado,
+      observaciones: observaciones.trim() === '' ? null : observaciones.trim(),
+    })
+    .eq('id', avanceId)
 
   if (error) throw error
 }

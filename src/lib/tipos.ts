@@ -162,11 +162,25 @@ export type GeneradorAvance = {
   proyecto_id: string
   fecha: string
   cantidad: number
+  nivel: string | null
+  eje: string | null
+  tramo: string | null
+  frente: string | null
+  largo: number | null
+  ancho: number | null
+  alto: number | null
+  piezas: number | null
+  estado: EstadoAvanceGenerador
+  validado_por: string | null
+  validado_en: string | null
+  observaciones: string | null
   nota: string | null
   registrado_por: string | null
   creado_en: string
   actualizado_en: string
 }
+
+export type EstadoAvanceGenerador = 'borrador' | 'enviado' | 'validado' | 'rechazado'
 
 export type EstadoEstimacion = 'borrador' | 'enviada' | 'autorizada' | 'pagada'
 
@@ -514,12 +528,32 @@ export type Database = {
           proyecto_id?: string
           fecha?: string
           cantidad: number
+          nivel?: string | null
+          eje?: string | null
+          tramo?: string | null
+          frente?: string | null
+          largo?: number | null
+          ancho?: number | null
+          alto?: number | null
+          piezas?: number | null
+          estado?: EstadoAvanceGenerador
+          observaciones?: string | null
           nota?: string | null
           registrado_por?: string | null
         }
         Update: {
           fecha?: string
           cantidad?: number
+          nivel?: string | null
+          eje?: string | null
+          tramo?: string | null
+          frente?: string | null
+          largo?: number | null
+          ancho?: number | null
+          alto?: number | null
+          piezas?: number | null
+          estado?: EstadoAvanceGenerador
+          observaciones?: string | null
           nota?: string | null
         }
         Relationships: []
@@ -714,6 +748,7 @@ export type Database = {
       prioridad_solicitud: PrioridadSolicitud
       estado_solicitud: EstadoSolicitud
       estado_baja_material: EstadoBajaMaterial
+      estado_avance_generador: EstadoAvanceGenerador
       modulo_sistema: Modulo
       accion_sistema: Accion
     }

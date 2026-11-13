@@ -8,14 +8,17 @@ import {
   listarAvancesGenerador,
   listarGeneradores,
   listarProyectos,
+  validarAvanceGenerador,
 } from '../datos/consultas'
+import type { EstadoAvanceGenerador } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
+import { Insignia } from '../componentes/Insignias'
 
 export function Generadores() {
-  const { sesion, permisos } = useSesion()
+  const { sesion, perfil, permisos } = useSesion()
   const usuarioId = sesion?.user.id ?? null
   const proyectosConsulta = useDatos(listarProyectos, [])
   const proyectos = proyectosConsulta.datos ?? []
@@ -40,6 +43,9 @@ export function Generadores() {
   const avances = consulta.datos?.avances ?? []
   const puedeVer = permisos.generadores?.ver === true
   const puedeCrear = permisos.generadores?.crear === true
+  const esGestor = perfil?.rol === 'admin' || perfil?.rol === 'permiso_medio'
+  const puedeCrearConcepto = esGestor && puedeCrear
+  const puedeValidar = esGestor
 
   const [aviso, setAviso] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(
     null,
@@ -55,6 +61,15 @@ export function Generadores() {
 
   const [generadorId, setGeneradorId] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
+  const [modo, setModo] = useState<'dimensiones' | 'directa'>('dimensiones')
+  const [nivel, setNivel] = useState('')
+  const [eje, setEje] = useState('')
+  const [tramo, setTramo] = useState('')
+  const [frente, setFrente] = useState('')
+  const [largo, setLargo] = useState('')
+  const [ancho, setAncho] = useState('')
+  const [alto, setAlto] = useState('')
+  const [piezas, setPiezas] = useState('1')
   const [cantidadAvance, setCantidadAvance] = useState('')
   const [nota, setNota] = useState('')
 
@@ -70,19 +85,28 @@ export function Generadores() {
   }, [generadores, generadorId])
 
   const ejecutadoPorGenerador = new Map<string, number>()
+  const pendientePorGenerador = new Map<string, number>()
   for (const avance of avances) {
-    ejecutadoPorGenerador.set(
-      avance.generador_id,
-      (ejecutadoPorGenerador.get(avance.generador_id) ?? 0) + Number(avance.cantidad),
-    )
+    if (avance.estado === 'validado') {
+      ejecutadoPorGenerador.set(
+        avance.generador_id,
+        (ejecutadoPorGenerador.get(avance.generador_id) ?? 0) + Number(avance.cantidad),
+      )
+    } else if (avance.estado === 'enviado') {
+      pendientePorGenerador.set(
+        avance.generador_id,
+        (pendientePorGenerador.get(avance.generador_id) ?? 0) + Number(avance.cantidad),
+      )
+    }
   }
 
   const filas = generadores.map((generador) => {
     const ejecutado = ejecutadoPorGenerador.get(generador.id) ?? 0
+    const pendiente = pendientePorGenerador.get(generador.id) ?? 0
     const importe = Number(generador.cantidad) * Number(generador.precio_unitario)
     const importeEjecutado = ejecutado * Number(generador.precio_unitario)
     const porcentaje = importe > 0 ? (importeEjecutado / importe) * 100 : 0
-    return { generador, ejecutado, importe, importeEjecutado, porcentaje }
+    return { generador, ejecutado, pendiente, importe, importeEjecutado, porcentaje }
   })
 
   const contratado = filas.reduce((total, fila) => total + fila.importe, 0)
@@ -91,6 +115,17 @@ export function Generadores() {
   const generadorSeleccionado = generadores.find(
     (generador) => generador.id === generadorId,
   )
+
+  const largoNumero = Number(largo) || 0
+  const anchoNumero = Number(ancho) || 0
+  const altoNumero = Number(alto) || 0
+  const piezasNumero = Number(piezas) || 1
+  const cantidadDimensiones =
+    altoNumero > 0
+      ? largoNumero * anchoNumero * altoNumero * piezasNumero
+      : largoNumero * anchoNumero * piezasNumero
+  const cantidadFinal =
+    modo === 'dimensiones' ? cantidadDimensiones : Number(cantidadAvance) || 0
 
   async function guardarGenerador(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -146,10 +181,14 @@ export function Generadores() {
       return
     }
 
-    const cantidadNumero = Number(cantidadAvance)
-
-    if (!Number.isFinite(cantidadNumero) || cantidadNumero <= 0) {
-      setAviso({ tipo: 'error', texto: 'La cantidad debe ser mayor que cero.' })
+    if (!Number.isFinite(cantidadFinal) || cantidadFinal <= 0) {
+      setAviso({
+        tipo: 'error',
+        texto:
+          modo === 'dimensiones'
+            ? 'Captura largo y ancho; si aplica, alto y piezas.'
+            : 'La cantidad debe ser mayor que cero.',
+      })
       return
     }
 
@@ -160,18 +199,62 @@ export function Generadores() {
       await crearAvanceGenerador({
         generadorId,
         fecha,
-        cantidad: Math.round(cantidadNumero * 100) / 100,
+        cantidad: Math.round(cantidadFinal * 100) / 100,
+        nivel: nivel.trim() === '' ? null : nivel.trim(),
+        eje: eje.trim() === '' ? null : eje.trim(),
+        tramo: tramo.trim() === '' ? null : tramo.trim(),
+        frente: frente.trim() === '' ? null : frente.trim(),
+        largo: largoNumero > 0 ? largoNumero : null,
+        ancho: anchoNumero > 0 ? anchoNumero : null,
+        alto: altoNumero > 0 ? altoNumero : null,
+        piezas: piezasNumero > 0 ? piezasNumero : 1,
+        estado: 'enviado',
+        observaciones: null,
         nota: nota.trim() === '' ? null : nota.trim(),
         usuarioId,
       })
       setCantidadAvance('')
+      setLargo('')
+      setAncho('')
+      setAlto('')
+      setPiezas('1')
+      setNivel('')
+      setEje('')
+      setTramo('')
+      setFrente('')
       setNota('')
       consulta.recargar()
-      setAviso({ tipo: 'exito', texto: 'Avance registrado.' })
+      setAviso({ tipo: 'exito', texto: 'Avance enviado para validación.' })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setGuardandoAvance(false)
+    }
+  }
+
+  async function validarAvance(avanceId: string, estado: EstadoAvanceGenerador) {
+    const observaciones =
+      window.prompt(
+        estado === 'validado'
+          ? 'Observaciones de validación (opcional):'
+          : 'Motivo del rechazo:',
+        '',
+      ) ?? ''
+    if (estado === 'rechazado' && observaciones.trim() === '') {
+      setAviso({ tipo: 'error', texto: 'Escribe el motivo del rechazo.' })
+      return
+    }
+
+    setAviso(null)
+    try {
+      await validarAvanceGenerador(avanceId, estado, observaciones)
+      consulta.recargar()
+      setAviso({
+        tipo: 'exito',
+        texto: estado === 'validado' ? 'Avance validado.' : 'Avance rechazado.',
+      })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     }
   }
 
@@ -264,9 +347,10 @@ export function Generadores() {
             <Cargando />
           ) : (
             <>
-              {puedeCrear ? (
+              {puedeCrearConcepto || puedeCrear ? (
                 <div className="rejilla-dos">
-                  <section className="tarjeta">
+                  {puedeCrearConcepto ? (
+                    <section className="tarjeta">
                     <div className="seccion__cabecera">
                       <div>
                         <h2 className="seccion__titulo">Nuevo concepto</h2>
@@ -358,6 +442,7 @@ export function Generadores() {
                       </div>
                     </form>
                   </section>
+                  ) : null}
 
                   <section className="tarjeta">
                     <div className="seccion__cabecera">
@@ -398,9 +483,13 @@ export function Generadores() {
                           {generadorSeleccionado ? (
                             <span className="campo__ayuda">
                               Contratado: {Number(generadorSeleccionado.cantidad).toFixed(2)}{' '}
-                              {generadorSeleccionado.unidad} · Ejecutado:{' '}
+                              {generadorSeleccionado.unidad} · Validado:{' '}
                               {(
                                 ejecutadoPorGenerador.get(generadorSeleccionado.id) ?? 0
+                              ).toFixed(2)}{' '}
+                              · Por validar:{' '}
+                              {(
+                                pendientePorGenerador.get(generadorSeleccionado.id) ?? 0
                               ).toFixed(2)}
                             </span>
                           ) : null}
@@ -423,18 +512,159 @@ export function Generadores() {
                         </div>
 
                         <div className="campo">
-                          <label className="campo__etiqueta" htmlFor="av-cantidad">
-                            Cantidad ejecutada
+                          <label className="campo__etiqueta" htmlFor="av-nivel">
+                            Nivel
                           </label>
                           <input
-                            id="av-cantidad"
+                            id="av-nivel"
                             className="campo__control"
-                            inputMode="decimal"
-                            value={cantidadAvance}
-                            onChange={(evento) => setCantidadAvance(evento.target.value)}
-                            placeholder="0.00"
+                            value={nivel}
+                            onChange={(evento) => setNivel(evento.target.value)}
+                            placeholder="PB, PA, Cimentación"
                           />
                         </div>
+
+                        <div className="campo">
+                          <label className="campo__etiqueta" htmlFor="av-eje">
+                            Eje
+                          </label>
+                          <input
+                            id="av-eje"
+                            className="campo__control"
+                            value={eje}
+                            onChange={(evento) => setEje(evento.target.value)}
+                            placeholder="A, B, 1, 2"
+                          />
+                        </div>
+
+                        <div className="campo">
+                          <label className="campo__etiqueta" htmlFor="av-tramo">
+                            Tramo
+                          </label>
+                          <input
+                            id="av-tramo"
+                            className="campo__control"
+                            value={tramo}
+                            onChange={(evento) => setTramo(evento.target.value)}
+                            placeholder="1-3, 2-4"
+                          />
+                        </div>
+
+                        <div className="campo">
+                          <label className="campo__etiqueta" htmlFor="av-frente">
+                            Frente
+                          </label>
+                          <input
+                            id="av-frente"
+                            className="campo__control"
+                            value={frente}
+                            onChange={(evento) => setFrente(evento.target.value)}
+                            placeholder="Frente norte"
+                          />
+                        </div>
+
+                        <div className="campo campo--ancho">
+                          <label className="campo__etiqueta" htmlFor="av-modo">
+                            Forma de captura
+                          </label>
+                          <select
+                            id="av-modo"
+                            className="campo__control"
+                            value={modo}
+                            onChange={(evento) =>
+                              setModo(evento.target.value as 'dimensiones' | 'directa')
+                            }
+                          >
+                            <option value="dimensiones">Por dimensiones</option>
+                            <option value="directa">Cantidad directa</option>
+                          </select>
+                        </div>
+
+                        {modo === 'dimensiones' ? (
+                          <>
+                            <div className="campo">
+                              <label className="campo__etiqueta" htmlFor="av-largo">
+                                Largo
+                              </label>
+                              <input
+                                id="av-largo"
+                                className="campo__control"
+                                inputMode="decimal"
+                                value={largo}
+                                onChange={(evento) => setLargo(evento.target.value)}
+                                placeholder="0.00"
+                              />
+                            </div>
+
+                            <div className="campo">
+                              <label className="campo__etiqueta" htmlFor="av-ancho">
+                                Ancho
+                              </label>
+                              <input
+                                id="av-ancho"
+                                className="campo__control"
+                                inputMode="decimal"
+                                value={ancho}
+                                onChange={(evento) => setAncho(evento.target.value)}
+                                placeholder="0.00"
+                              />
+                            </div>
+
+                            <div className="campo">
+                              <label className="campo__etiqueta" htmlFor="av-alto">
+                                Alto (opcional)
+                              </label>
+                              <input
+                                id="av-alto"
+                                className="campo__control"
+                                inputMode="decimal"
+                                value={alto}
+                                onChange={(evento) => setAlto(evento.target.value)}
+                                placeholder="0.00"
+                              />
+                            </div>
+
+                            <div className="campo">
+                              <label className="campo__etiqueta" htmlFor="av-piezas">
+                                Piezas
+                              </label>
+                              <input
+                                id="av-piezas"
+                                className="campo__control"
+                                inputMode="decimal"
+                                value={piezas}
+                                onChange={(evento) => setPiezas(evento.target.value)}
+                                placeholder="1"
+                              />
+                            </div>
+
+                            <div className="campo campo--ancho">
+                              <span className="campo__etiqueta">Cantidad calculada</span>
+                              <div className="campo__control campo__control--fijo">
+                                {cantidadDimensiones.toFixed(2)}{' '}
+                                {generadorSeleccionado?.unidad ?? ''}
+                              </div>
+                              <span className="campo__ayuda">
+                                Largo × ancho × alto × piezas. Si dejas el alto en cero, se
+                                calcula área.
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="campo campo--ancho">
+                            <label className="campo__etiqueta" htmlFor="av-cantidad">
+                              Cantidad ejecutada
+                            </label>
+                            <input
+                              id="av-cantidad"
+                              className="campo__control"
+                              inputMode="decimal"
+                              value={cantidadAvance}
+                              onChange={(evento) => setCantidadAvance(evento.target.value)}
+                              placeholder="0.00"
+                            />
+                          </div>
+                        )}
 
                         <div className="campo campo--ancho">
                           <label className="campo__etiqueta" htmlFor="av-nota">
@@ -445,7 +675,7 @@ export function Generadores() {
                             className="campo__control"
                             value={nota}
                             onChange={(evento) => setNota(evento.target.value)}
-                            placeholder="Frente, turno o comentario"
+                            placeholder="Turno, comentario o referencia"
                           />
                         </div>
 
@@ -455,7 +685,7 @@ export function Generadores() {
                             className="boton boton--primario"
                             disabled={guardandoAvance}
                           >
-                            {guardandoAvance ? 'Guardando…' : 'Registrar avance'}
+                            {guardandoAvance ? 'Guardando…' : 'Enviar avance'}
                           </button>
                         </div>
                       </form>
@@ -544,8 +774,11 @@ export function Generadores() {
                         <tr>
                           <th scope="col">Fecha</th>
                           <th scope="col">Concepto</th>
+                          <th scope="col">Ubicación</th>
                           <th scope="col">Cantidad</th>
-                          <th scope="col">Nota</th>
+                          <th scope="col">Estado</th>
+                          <th scope="col">Observaciones</th>
+                          {puedeValidar ? <th scope="col" aria-label="Acciones" /> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -565,10 +798,58 @@ export function Generadores() {
                                 </span>
                               </td>
                               <td>
+                                {[avance.nivel, avance.eje, avance.tramo, avance.frente]
+                                  .filter(Boolean)
+                                  .join(' · ') || 'Sin ubicación'}
+                              </td>
+                              <td>
                                 {Number(avance.cantidad).toFixed(2)}{' '}
                                 {generador?.unidad ?? ''}
                               </td>
-                              <td>{avance.nota ?? '—'}</td>
+                              <td>
+                                <Insignia
+                                  tono={
+                                    avance.estado === 'validado'
+                                      ? 'en_ejecucion'
+                                      : avance.estado === 'rechazado'
+                                        ? 'alerta'
+                                        : avance.estado === 'enviado'
+                                          ? 'alerta'
+                                          : 'tenue'
+                                  }
+                                >
+                                  {avance.estado === 'validado'
+                                    ? 'Validado'
+                                    : avance.estado === 'rechazado'
+                                      ? 'Rechazado'
+                                      : avance.estado === 'enviado'
+                                        ? 'Por validar'
+                                        : 'Borrador'}
+                                </Insignia>
+                              </td>
+                              <td>{avance.observaciones ?? avance.nota ?? '—'}</td>
+                              {puedeValidar ? (
+                                <td>
+                                  {avance.estado === 'enviado' ? (
+                                    <div className="tabla__acciones">
+                                      <button
+                                        type="button"
+                                        className="boton boton--primario"
+                                        onClick={() => void validarAvance(avance.id, 'validado')}
+                                      >
+                                        Validar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="boton boton--peligro"
+                                        onClick={() => void validarAvance(avance.id, 'rechazado')}
+                                      >
+                                        Rechazar
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </td>
+                              ) : null}
                             </tr>
                           )
                         })}

@@ -139,6 +139,10 @@ try {
   ok('0016 baja con cantidad')
   await ejecutar('0016_baja_cantidad.sql')
   ok('0016 baja con cantidad repetible')
+  await ejecutar('0017_avances_tramo.sql')
+  ok('0017 avances por tramo')
+  await ejecutar('0017_avances_tramo.sql')
+  ok('0017 avances por tramo repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -350,8 +354,8 @@ try {
   `)
   const GEN = generadorCreado.rows[0].id
   await db.query(`
-    insert into public.generador_avances (generador_id, fecha, cantidad, nota)
-    values ('${GEN}', (now() at time zone 'America/Mexico_City')::date, 40, 'Frente A')
+    insert into public.generador_avances (generador_id, fecha, cantidad, nota, estado)
+    values ('${GEN}', (now() at time zone 'America/Mexico_City')::date, 40, 'Frente A', 'validado')
   `)
   const avanceGenerador = await db.query(
     'select proyecto_id, cantidad::text, registrado_por from public.generador_avances where generador_id = $1',
@@ -367,7 +371,7 @@ try {
   }
 
   await esperarError('avance no supera lo contratado', () =>
-    db.exec(`insert into public.generador_avances (generador_id, cantidad) values ('${GEN}', 70)`), '23514')
+    db.exec(`insert into public.generador_avances (generador_id, cantidad, estado) values ('${GEN}', 70, 'enviado')`), '23514')
 
   await como(RES)
   const generadoresResidente = await db.query('select count(*)::int as n from public.generadores')
@@ -386,8 +390,16 @@ try {
   await esperarError('residente no crea generadores', () =>
     db.exec(`insert into public.generadores (proyecto_id, descripcion, cantidad) values ('${P1}', 'Ajeno', 1)`), '42501')
 
-  await esperarError('residente no crea avances', () =>
-    db.exec(`insert into public.generador_avances (generador_id, cantidad) values ('${GEN}', 1)`), '42501')
+  const avanceResidente = await db.query(`
+    insert into public.generador_avances (generador_id, cantidad, estado)
+    values ('${GEN}', 5, 'borrador')
+    returning id
+  `)
+  if (avanceResidente.rows.length === 1) ok('residente crea avance en borrador')
+  else fallo('residente crea avance en borrador')
+
+  await esperarError('residente no valida avances', () =>
+    db.exec(`update public.generador_avances set estado = 'validado' where id = '${avanceResidente.rows[0].id}'`), '42501')
 
   await como(MED)
   await esperarError('permiso medio no crea personal', () =>
