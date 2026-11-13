@@ -1,8 +1,9 @@
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
+  actualizarAvanceGenerador,
   crearAvanceGenerador,
   crearGenerador,
   listarAvancesGenerador,
@@ -10,7 +11,7 @@ import {
   listarProyectos,
   validarAvanceGenerador,
 } from '../datos/consultas'
-import type { EstadoAvanceGenerador } from '../lib/tipos'
+import type { EstadoAvanceGenerador, GeneradorAvance } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
@@ -44,6 +45,7 @@ export function Generadores() {
   const puedeVer = permisos.generadores?.ver === true
   const puedeCrear = permisos.generadores?.crear === true
   const esGestor = perfil?.rol === 'admin' || perfil?.rol === 'permiso_medio'
+  const esResidente = perfil?.rol === 'residente'
   const puedeCrearConcepto = esGestor && puedeCrear
   const puedeValidar = esGestor
 
@@ -72,6 +74,9 @@ export function Generadores() {
   const [piezas, setPiezas] = useState('1')
   const [cantidadAvance, setCantidadAvance] = useState('')
   const [nota, setNota] = useState('')
+  const [respuestaResidente, setRespuestaResidente] = useState('')
+  const [avanceEditando, setAvanceEditando] = useState<GeneradorAvance | null>(null)
+  const formAvanceRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (generadores.length === 0) {
@@ -195,24 +200,34 @@ export function Generadores() {
     setGuardandoAvance(true)
     setAviso(null)
 
+    const datos = {
+      generadorId,
+      fecha,
+      cantidad: Math.round(cantidadFinal * 100) / 100,
+      nivel: nivel.trim() === '' ? null : nivel.trim(),
+      eje: eje.trim() === '' ? null : eje.trim(),
+      tramo: tramo.trim() === '' ? null : tramo.trim(),
+      frente: frente.trim() === '' ? null : frente.trim(),
+      largo: largoNumero > 0 ? largoNumero : null,
+      ancho: anchoNumero > 0 ? anchoNumero : null,
+      alto: altoNumero > 0 ? altoNumero : null,
+      piezas: piezasNumero > 0 ? piezasNumero : 1,
+      estado: 'enviado' as const,
+      observaciones: null,
+      respuestaResidente:
+        respuestaResidente.trim() === '' ? null : respuestaResidente.trim(),
+      nota: nota.trim() === '' ? null : nota.trim(),
+      usuarioId,
+    }
+
     try {
-      await crearAvanceGenerador({
-        generadorId,
-        fecha,
-        cantidad: Math.round(cantidadFinal * 100) / 100,
-        nivel: nivel.trim() === '' ? null : nivel.trim(),
-        eje: eje.trim() === '' ? null : eje.trim(),
-        tramo: tramo.trim() === '' ? null : tramo.trim(),
-        frente: frente.trim() === '' ? null : frente.trim(),
-        largo: largoNumero > 0 ? largoNumero : null,
-        ancho: anchoNumero > 0 ? anchoNumero : null,
-        alto: altoNumero > 0 ? altoNumero : null,
-        piezas: piezasNumero > 0 ? piezasNumero : 1,
-        estado: 'enviado',
-        observaciones: null,
-        nota: nota.trim() === '' ? null : nota.trim(),
-        usuarioId,
-      })
+      if (avanceEditando) {
+        await actualizarAvanceGenerador(avanceEditando.id, datos)
+      } else {
+        await crearAvanceGenerador(datos)
+      }
+      setAvanceEditando(null)
+      setRespuestaResidente('')
       setCantidadAvance('')
       setLargo('')
       setAncho('')
@@ -224,12 +239,39 @@ export function Generadores() {
       setFrente('')
       setNota('')
       consulta.recargar()
-      setAviso({ tipo: 'exito', texto: 'Avance enviado para validación.' })
+      setAviso({
+        tipo: 'exito',
+        texto: avanceEditando
+          ? 'Avance corregido y reenviado a validación.'
+          : 'Avance enviado para validación.',
+      })
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setGuardandoAvance(false)
     }
+  }
+
+  function editarAvance(avance: GeneradorAvance) {
+    setAvanceEditando(avance)
+    setGeneradorId(avance.generador_id)
+    setFecha(avance.fecha)
+    setNivel(avance.nivel ?? '')
+    setEje(avance.eje ?? '')
+    setTramo(avance.tramo ?? '')
+    setFrente(avance.frente ?? '')
+    setModo(avance.largo !== null || avance.ancho !== null ? 'dimensiones' : 'directa')
+    setLargo(avance.largo === null ? '' : String(avance.largo))
+    setAncho(avance.ancho === null ? '' : String(avance.ancho))
+    setAlto(avance.alto === null ? '' : String(avance.alto))
+    setPiezas(avance.piezas === null ? '1' : String(avance.piezas))
+    setCantidadAvance(String(avance.cantidad))
+    setNota(avance.nota ?? '')
+    setRespuestaResidente(avance.respuesta_residente ?? '')
+    setAviso(null)
+    window.setTimeout(() => {
+      formAvanceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   async function validarAvance(avanceId: string, estado: EstadoAvanceGenerador) {
@@ -444,15 +486,25 @@ export function Generadores() {
                   </section>
                   ) : null}
 
-                  <section className="tarjeta">
+                  <section className="tarjeta" ref={formAvanceRef}>
                     <div className="seccion__cabecera">
                       <div>
-                        <h2 className="seccion__titulo">Registrar avance</h2>
+                        <h2 className="seccion__titulo">
+                          {avanceEditando ? 'Corregir avance rechazado' : 'Registrar avance'}
+                        </h2>
                         <p className="seccion__nota">
-                          Cantidad ejecutada del concepto. No puede superar lo contratado.
+                          {avanceEditando
+                            ? 'Corrige lo necesario y reenvía el mismo registro a validación.'
+                            : 'Captura ubicación, dimensiones y cantidad ejecutada.'}
                         </p>
                       </div>
                     </div>
+
+                    {avanceEditando?.observaciones ? (
+                      <Aviso tipo="error">
+                        Motivo del rechazo: {avanceEditando.observaciones}
+                      </Aviso>
+                    ) : null}
 
                     {generadores.length === 0 ? (
                       <Vacio titulo="Primero agrega un concepto">
@@ -679,14 +731,48 @@ export function Generadores() {
                           />
                         </div>
 
+                        {avanceEditando ? (
+                          <div className="campo campo--ancho">
+                            <label className="campo__etiqueta" htmlFor="av-respuesta">
+                              Respuesta al rechazo
+                            </label>
+                            <textarea
+                              id="av-respuesta"
+                              className="campo__control"
+                              rows={3}
+                              value={respuestaResidente}
+                              onChange={(evento) =>
+                                setRespuestaResidente(evento.target.value)
+                              }
+                              placeholder="Explica qué corregiste"
+                            />
+                          </div>
+                        ) : null}
+
                         <div className="acciones campo--ancho">
                           <button
                             type="submit"
                             className="boton boton--primario"
                             disabled={guardandoAvance}
                           >
-                            {guardandoAvance ? 'Guardando…' : 'Enviar avance'}
+                            {guardandoAvance
+                              ? 'Guardando…'
+                              : avanceEditando
+                                ? 'Reenviar a validación'
+                                : 'Enviar avance'}
                           </button>
+                          {avanceEditando ? (
+                            <button
+                              type="button"
+                              className="boton boton--tenue"
+                              onClick={() => {
+                                setAvanceEditando(null)
+                                setRespuestaResidente('')
+                              }}
+                            >
+                              Cancelar corrección
+                            </button>
+                          ) : null}
                         </div>
                       </form>
                     )}
@@ -778,7 +864,9 @@ export function Generadores() {
                           <th scope="col">Cantidad</th>
                           <th scope="col">Estado</th>
                           <th scope="col">Observaciones</th>
-                          {puedeValidar ? <th scope="col" aria-label="Acciones" /> : null}
+                          {puedeValidar || esResidente ? (
+                            <th scope="col" aria-label="Acciones" />
+                          ) : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -827,10 +915,31 @@ export function Generadores() {
                                         : 'Borrador'}
                                 </Insignia>
                               </td>
-                              <td>{avance.observaciones ?? avance.nota ?? '—'}</td>
-                              {puedeValidar ? (
+                              <td>
+                                {avance.observaciones ? (
+                                  <span className="celda-nota">
+                                    Rechazo: {avance.observaciones}
+                                  </span>
+                                ) : null}
+                                {avance.respuesta_residente ? (
+                                  <span className="celda-nota">
+                                    Respuesta: {avance.respuesta_residente}
+                                  </span>
+                                ) : null}
+                                {!avance.observaciones &&
+                                !avance.respuesta_residente &&
+                                avance.nota
+                                  ? avance.nota
+                                  : null}
+                                {!avance.observaciones &&
+                                !avance.respuesta_residente &&
+                                !avance.nota
+                                  ? '—'
+                                  : null}
+                              </td>
+                              {puedeValidar || esResidente ? (
                                 <td>
-                                  {avance.estado === 'enviado' ? (
+                                  {puedeValidar && avance.estado === 'enviado' ? (
                                     <div className="tabla__acciones">
                                       <button
                                         type="button"
@@ -847,6 +956,15 @@ export function Generadores() {
                                         Rechazar
                                       </button>
                                     </div>
+                                  ) : null}
+                                  {esResidente && avance.estado === 'rechazado' ? (
+                                    <button
+                                      type="button"
+                                      className="boton"
+                                      onClick={() => editarAvance(avance)}
+                                    >
+                                      Corregir y reenviar
+                                    </button>
                                   ) : null}
                                 </td>
                               ) : null}

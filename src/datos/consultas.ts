@@ -548,6 +548,7 @@ export type DatosAvanceGenerador = {
   piezas: number | null
   estado: EstadoAvanceGenerador
   observaciones: string | null
+  respuestaResidente: string | null
   nota: string | null
   usuarioId: string | null
 }
@@ -614,9 +615,36 @@ export async function crearAvanceGenerador(
     piezas: datos.piezas,
     estado: datos.estado,
     observaciones: datos.observaciones,
+    respuesta_residente: datos.respuestaResidente,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
+
+  if (error) throw error
+}
+
+export async function actualizarAvanceGenerador(
+  avanceId: string,
+  datos: DatosAvanceGenerador,
+): Promise<void> {
+  const { error } = await supabase
+    .from('generador_avances')
+    .update({
+      fecha: datos.fecha,
+      cantidad: datos.cantidad,
+      nivel: datos.nivel,
+      eje: datos.eje,
+      tramo: datos.tramo,
+      frente: datos.frente,
+      largo: datos.largo,
+      ancho: datos.ancho,
+      alto: datos.alto,
+      piezas: datos.piezas,
+      estado: datos.estado,
+      respuesta_residente: datos.respuestaResidente,
+      nota: datos.nota,
+    })
+    .eq('id', avanceId)
 
   if (error) throw error
 }

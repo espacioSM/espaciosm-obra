@@ -174,6 +174,7 @@ export type GeneradorAvance = {
   validado_por: string | null
   validado_en: string | null
   observaciones: string | null
+  respuesta_residente: string | null
   nota: string | null
   registrado_por: string | null
   creado_en: string
@@ -538,6 +539,7 @@ export type Database = {
           piezas?: number | null
           estado?: EstadoAvanceGenerador
           observaciones?: string | null
+          respuesta_residente?: string | null
           nota?: string | null
           registrado_por?: string | null
         }
@@ -554,6 +556,7 @@ export type Database = {
           piezas?: number | null
           estado?: EstadoAvanceGenerador
           observaciones?: string | null
+          respuesta_residente?: string | null
           nota?: string | null
         }
         Relationships: []

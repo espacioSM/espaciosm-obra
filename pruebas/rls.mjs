@@ -143,6 +143,14 @@ try {
   ok('0017 avances por tramo')
   await ejecutar('0017_avances_tramo.sql')
   ok('0017 avances por tramo repetible')
+  await ejecutar('0018_respuesta_avance.sql')
+  ok('0018 respuesta de avance')
+  await ejecutar('0018_respuesta_avance.sql')
+  ok('0018 respuesta de avance repetible')
+  await ejecutar('0019_corregir_rechazado.sql')
+  ok('0019 corregir rechazado')
+  await ejecutar('0019_corregir_rechazado.sql')
+  ok('0019 corregir rechazado repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -400,6 +408,32 @@ try {
 
   await esperarError('residente no valida avances', () =>
     db.exec(`update public.generador_avances set estado = 'validado' where id = '${avanceResidente.rows[0].id}'`), '42501')
+
+  await como(MED)
+  await db.exec(`
+    update public.generador_avances
+    set estado = 'rechazado', observaciones = 'Falta medida'
+    where id = '${avanceResidente.rows[0].id}'
+  `)
+
+  await como(RES)
+  await db.exec(`
+    update public.generador_avances
+    set estado = 'enviado', respuesta_residente = 'Se corrigió la medida'
+    where id = '${avanceResidente.rows[0].id}'
+  `)
+  const avanceCorregido = await db.query(
+    'select estado, respuesta_residente from public.generador_avances where id = $1',
+    [avanceResidente.rows[0].id],
+  )
+  if (
+    avanceCorregido.rows[0]?.estado === 'enviado' &&
+    avanceCorregido.rows[0]?.respuesta_residente === 'Se corrigió la medida'
+  ) {
+    ok('residente corrige y reenvía avance rechazado')
+  } else {
+    fallo('residente corrige y reenvía avance rechazado', JSON.stringify(avanceCorregido.rows[0]))
+  }
 
   await como(MED)
   await esperarError('permiso medio no crea personal', () =>
