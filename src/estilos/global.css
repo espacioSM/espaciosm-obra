@@ -1546,7 +1546,17 @@ a {
   margin-top: 10px;
 }
 
-.fotos-previas .foto-previa {
+.entrada-oculta {
+  display: none;
+}
+
+.foto-previa-contenedor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.foto-previa-contenedor .foto-previa {
   width: 100%;
   height: 150px;
   margin-top: 0;

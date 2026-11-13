@@ -80,6 +80,8 @@ export function Generadores() {
   const [fotoFiles, setFotoFiles] = useState<File[]>([])
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
   const [fotoPathsActuales, setFotoPathsActuales] = useState<string[]>([])
+  const camaraRef = useRef<HTMLInputElement | null>(null)
+  const galeriaRef = useRef<HTMLInputElement | null>(null)
   const formAvanceRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -288,8 +290,22 @@ export function Generadores() {
     }
   }
 
-  function editarAvance(avance: GeneradorAvance) {
-    setAvanceEditando(avance)
+  function agregarFotos(lista: FileList | null) {
+    if (!lista || lista.length === 0) return
+    const combinados = [...fotoFiles, ...Array.from(lista)].slice(0, 3)
+    for (const preview of fotoPreviews) URL.revokeObjectURL(preview)
+    setFotoFiles(combinados)
+    setFotoPreviews(combinados.map((archivo) => URL.createObjectURL(archivo)))
+  }
+
+  function quitarFoto(indice: number) {
+    const siguientes = fotoFiles.filter((_, posicion) => posicion !== indice)
+    for (const preview of fotoPreviews) URL.revokeObjectURL(preview)
+    setFotoFiles(siguientes)
+    setFotoPreviews(siguientes.map((archivo) => URL.createObjectURL(archivo)))
+  }
+
+  function editarAvance(avance: GeneradorAvance) {    setAvanceEditando(avance)
     setGeneradorId(avance.generador_id)
     setFecha(avance.fecha)
     setNivel(avance.nivel ?? '')
@@ -795,44 +811,72 @@ export function Generadores() {
                         ) : null}
 
                         <div className="campo campo--ancho">
-                          <label className="campo__etiqueta" htmlFor="av-foto">
-                            Foto de evidencia
-                          </label>
+                          <span className="campo__etiqueta">Foto de evidencia</span>
                           <input
-                            id="av-foto"
-                            className="campo__control"
+                            ref={camaraRef}
+                            className="entrada-oculta"
                             type="file"
                             accept="image/*"
                             capture="environment"
-                            multiple
                             onChange={(evento) => {
-                              const archivos = Array.from(
-                                evento.target.files ?? [],
-                              ).slice(0, 3)
-                              for (const preview of fotoPreviews) {
-                                URL.revokeObjectURL(preview)
-                              }
-                              setFotoFiles(archivos)
-                              setFotoPreviews(
-                                archivos.map((archivo) =>
-                                  URL.createObjectURL(archivo),
-                                ),
-                              )
+                              agregarFotos(evento.target.files)
+                              evento.target.value = ''
                             }}
                           />
+                          <input
+                            ref={galeriaRef}
+                            className="entrada-oculta"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(evento) => {
+                              agregarFotos(evento.target.files)
+                              evento.target.value = ''
+                            }}
+                          />
+                          <div className="acciones">
+                            <button
+                              type="button"
+                              className="boton"
+                              disabled={fotoFiles.length >= 3}
+                              onClick={() => camaraRef.current?.click()}
+                            >
+                              Tomar foto
+                            </button>
+                            <button
+                              type="button"
+                              className="boton"
+                              disabled={fotoFiles.length >= 3}
+                              onClick={() => galeriaRef.current?.click()}
+                            >
+                              Elegir de galería
+                            </button>
+                            <span className="seccion__nota">
+                              {fotoFiles.length} de 3 fotos
+                            </span>
+                          </div>
                           <span className="campo__ayuda">
-                            Hasta 3 fotos. La app agrega proyecto, fecha, ubicación y
-                            concepto sobre cada una.
+                            Puedes tomar una foto o elegir varias de la memoria, hasta 3.
+                            La app agrega proyecto, fecha, ubicación y concepto sobre cada
+                            una.
                           </span>
                           {fotoPreviews.length > 0 ? (
                             <div className="fotos-previas">
-                              {fotoPreviews.map((preview) => (
-                                <img
-                                  key={preview}
-                                  className="foto-previa"
-                                  src={preview}
-                                  alt="Vista previa de la evidencia"
-                                />
+                              {fotoPreviews.map((preview, indice) => (
+                                <div className="foto-previa-contenedor" key={preview}>
+                                  <img
+                                    className="foto-previa"
+                                    src={preview}
+                                    alt={`Vista previa ${indice + 1}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="boton boton--peligro"
+                                    onClick={() => quitarFoto(indice)}
+                                  >
+                                    Quitar
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           ) : null}
