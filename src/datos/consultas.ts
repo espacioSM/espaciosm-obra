@@ -551,6 +551,7 @@ export async function responderBajaMaterial(
 
 export type DatosPago = {
   proyectoId: string
+  estimacionId: string | null
   tipo: TipoPago
   beneficiario: string
   concepto: string
@@ -576,6 +577,7 @@ export async function listarPagos(proyectoId: string): Promise<Pago[]> {
 export async function crearPago(datos: DatosPago): Promise<void> {
   const { error } = await supabase.from('pagos').insert({
     proyecto_id: datos.proyectoId,
+    estimacion_id: datos.estimacionId,
     tipo: datos.tipo,
     beneficiario: datos.beneficiario,
     concepto: datos.concepto,

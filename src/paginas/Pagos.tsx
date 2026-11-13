@@ -1,8 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
-import { crearPago, listarPagos, listarProyectos } from '../datos/consultas'
-import type { MetodoPago, TipoPago } from '../lib/tipos'
+import {
+  crearPago,
+  listarEstimaciones,
+  listarPagos,
+  listarPartidasEstimacion,
+  listarProyectos,
+} from '../datos/consultas'
+import type { Estimacion, EstimacionPartida, MetodoPago, TipoPago } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { Aviso } from '../componentes/Aviso'
@@ -34,11 +40,24 @@ export function Pagos() {
     }
   }, [proyectoId, proyectos])
 
-  const consulta = useDatos(
-    () => (proyectoId === '' ? Promise.resolve([]) : listarPagos(proyectoId)),
-    [proyectoId],
-  )
-  const pagos = consulta.datos ?? []
+  const consulta = useDatos(async () => {
+    if (proyectoId === '') {
+      return { pagos: [], estimaciones: [], partidas: [] }
+    }
+    const [pagos, estimaciones] = await Promise.all([
+      listarPagos(proyectoId),
+      listarEstimaciones(proyectoId),
+    ])
+    const partidas = (
+      await Promise.all(
+        estimaciones.map((estimacion) => listarPartidasEstimacion(estimacion.id)),
+      )
+    ).flat()
+    return { pagos, estimaciones, partidas }
+  }, [proyectoId])
+  const pagos = consulta.datos?.pagos ?? []
+  const estimaciones = consulta.datos?.estimaciones ?? []
+  const partidas = consulta.datos?.partidas ?? []
   const puedeVer = permisos.pagos?.ver === true
   const puedeCrear = permisos.pagos?.crear === true
 
@@ -46,6 +65,7 @@ export function Pagos() {
     null,
   )
   const [guardando, setGuardando] = useState(false)
+  const [estimacionId, setEstimacionId] = useState('')
   const [tipo, setTipo] = useState<TipoPago>('proveedor')
   const [beneficiario, setBeneficiario] = useState('')
   const [concepto, setConcepto] = useState('')
@@ -56,6 +76,29 @@ export function Pagos() {
   const [nota, setNota] = useState('')
 
   const total = pagos.reduce((suma, pago) => suma + Number(pago.monto), 0)
+  const pendientes = estimaciones.filter(
+    (estimacion) => estimacion.estado === 'autorizada',
+  )
+
+  function totalEstimacion(estimacion: Estimacion): number {
+    const delCorte = partidas.filter(
+      (partida: EstimacionPartida) => partida.estimacion_id === estimacion.id,
+    )
+    const subtotal = delCorte.reduce(
+      (suma, partida) => suma + Number(partida.importe),
+      0,
+    )
+    const retencion = subtotal * (Number(estimacion.retencion_porcentaje) / 100)
+    return subtotal - retencion
+  }
+
+  function prepararPagoEstimacion(estimacion: Estimacion) {
+    const totalCorte = totalEstimacion(estimacion)
+    setEstimacionId(estimacion.id)
+    setConcepto(`Estimación ${estimacion.numero}`)
+    setMonto(totalCorte.toFixed(2))
+    setReferencia(`EST-${estimacion.numero}`)
+  }
 
   async function guardar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -77,6 +120,7 @@ export function Pagos() {
     try {
       await crearPago({
         proyectoId,
+        estimacionId: estimacionId === '' ? null : estimacionId,
         tipo,
         beneficiario: beneficiario.trim(),
         concepto: concepto.trim(),
@@ -91,6 +135,7 @@ export function Pagos() {
       setMonto('')
       setReferencia('')
       setNota('')
+      setEstimacionId('')
       consulta.recargar()
       setAviso({ tipo: 'exito', texto: 'Pago registrado.' })
     } catch (fallo) {
@@ -172,6 +217,53 @@ export function Pagos() {
             </article>
           </section>
 
+          {puedeCrear && pendientes.length > 0 ? (
+            <section className="tarjeta">
+              <div className="seccion__cabecera">
+                <div>
+                  <h2 className="seccion__titulo">Estimaciones por pagar</h2>
+                  <p className="seccion__nota">
+                    Cortes autorizados pendientes de registrar su pago.
+                  </p>
+                </div>
+              </div>
+
+              <div className="tabla-marco">
+                <table className="tabla">
+                  <thead>
+                    <tr>
+                      <th scope="col">Estimación</th>
+                      <th scope="col">Periodo</th>
+                      <th scope="col">Total</th>
+                      <th scope="col" aria-label="Acciones" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendientes.map((estimacion) => (
+                      <tr key={estimacion.id}>
+                        <td>{estimacion.numero}</td>
+                        <td>
+                          {formatearFecha(estimacion.fecha_inicio)} —{' '}
+                          {formatearFecha(estimacion.fecha_fin)}
+                        </td>
+                        <td>{formatearMoneda(totalEstimacion(estimacion))}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="boton boton--primario"
+                            onClick={() => prepararPagoEstimacion(estimacion)}
+                          >
+                            Registrar pago
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
           {puedeCrear ? (
             <section className="tarjeta">
               <div className="seccion__cabecera">
@@ -185,6 +277,31 @@ export function Pagos() {
               </div>
 
               <form className="formulario" onSubmit={(evento) => void guardar(evento)}>
+                <div className="campo campo--ancho">
+                  <label className="campo__etiqueta" htmlFor="pago-estimacion">
+                    Estimación por pagar
+                  </label>
+                  <select
+                    id="pago-estimacion"
+                    className="campo__control"
+                    value={estimacionId}
+                    onChange={(evento) => {
+                      const id = evento.target.value
+                      setEstimacionId(id)
+                      const estimacion = pendientes.find((item) => item.id === id)
+                      if (estimacion) prepararPagoEstimacion(estimacion)
+                    }}
+                  >
+                    <option value="">Pago general (sin estimación)</option>
+                    {pendientes.map((estimacion) => (
+                      <option key={estimacion.id} value={estimacion.id}>
+                        {estimacion.numero} ·{' '}
+                        {formatearMoneda(totalEstimacion(estimacion))}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="campo">
                   <label className="campo__etiqueta" htmlFor="pago-tipo">
                     Tipo
@@ -338,6 +455,7 @@ export function Pagos() {
                   <thead>
                     <tr>
                       <th scope="col">Fecha</th>
+                      <th scope="col">Estimación</th>
                       <th scope="col">Tipo</th>
                       <th scope="col">Beneficiario</th>
                       <th scope="col">Concepto</th>
@@ -350,6 +468,11 @@ export function Pagos() {
                     {pagos.map((pago) => (
                       <tr key={pago.id}>
                         <td>{formatearFecha(pago.fecha)}</td>
+                        <td>
+                          {estimaciones.find(
+                            (estimacion) => estimacion.id === pago.estimacion_id,
+                          )?.numero ?? '—'}
+                        </td>
                         <td>{TIPO[pago.tipo]}</td>
                         <td>{pago.beneficiario}</td>
                         <td>{pago.concepto}</td>

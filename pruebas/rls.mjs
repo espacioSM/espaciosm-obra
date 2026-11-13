@@ -175,6 +175,10 @@ try {
   ok('0026 seguimiento de bitácora')
   await ejecutar('0026_bitacora_comentarios.sql')
   ok('0026 seguimiento de bitácora repetible')
+  await ejecutar('0027_pago_estimacion.sql')
+  ok('0027 pago de estimación')
+  await ejecutar('0027_pago_estimacion.sql')
+  ok('0027 pago de estimación repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -802,13 +806,20 @@ try {
   }
 
   await como(ADMIN)
+  await db.exec(`update public.estimaciones set estado = 'autorizada' where id = '${EST}'`)
   await db.query(`
     insert into public.pagos
-      (proyecto_id, tipo, beneficiario, concepto, monto, fecha, metodo)
+      (proyecto_id, estimacion_id, tipo, beneficiario, concepto, monto, fecha, metodo)
     values
-      ('${P1}', 'proveedor', 'Proveedor Demo', 'Material', 1500,
+      ('${P1}', '${EST}', 'proveedor', 'Proveedor Demo', 'Material', 1500,
        (now() at time zone 'America/Mexico_City')::date, 'transferencia')
   `)
+  const estimacionPagada = await db.query(
+    'select estado from public.estimaciones where id = $1',
+    [EST],
+  )
+  if (estimacionPagada.rows[0]?.estado === 'pagada') ok('pago marca estimación pagada')
+  else fallo('pago marca estimación pagada', JSON.stringify(estimacionPagada.rows[0]))
   ok('admin registra pago')
 
   await como(MED)

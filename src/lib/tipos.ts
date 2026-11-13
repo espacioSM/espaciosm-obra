@@ -236,6 +236,7 @@ export type MetodoPago = 'efectivo' | 'transferencia' | 'cheque' | 'otro'
 export type Pago = {
   id: string
   proyecto_id: string
+  estimacion_id: string | null
   tipo: TipoPago
   beneficiario: string
   concepto: string
@@ -711,6 +712,7 @@ export type Database = {
         Insert: {
           id?: string
           proyecto_id: string
+          estimacion_id?: string | null
           tipo?: TipoPago
           beneficiario: string
           concepto: string
@@ -722,6 +724,7 @@ export type Database = {
           registrado_por?: string | null
         }
         Update: {
+          estimacion_id?: string | null
           tipo?: TipoPago
           beneficiario?: string
           concepto?: string
