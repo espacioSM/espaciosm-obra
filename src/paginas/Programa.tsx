@@ -491,6 +491,10 @@ export function Programa() {
                           </option>
                         ))}
                       </select>
+                      <span className="campo__ayuda">
+                        Para que el avance real se calcule automáticamente, elige un
+                        concepto. Una actividad libre no recibe avances.
+                      </span>
                     </div>
 
                     <div className="campo campo--ancho">

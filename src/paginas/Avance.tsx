@@ -7,8 +7,8 @@ import {
   listarGeneradores,
   listarProyectos,
 } from '../datos/consultas'
-import type { Generador, ProgramaActividad } from '../lib/tipos'
-import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
+import type { ProgramaActividad } from '../lib/tipos'
+import { formatearFecha, hoyISO } from '../lib/formato'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
 import { Insignia } from '../componentes/Insignias'
@@ -97,12 +97,17 @@ export function Avance() {
   const puedeVer = permisos.generadores?.ver === true
 
   const ejecutadoPorGenerador = new Map<string, number>()
+  const validadosPorGenerador = new Map<string, number>()
   const primerAvancePorGenerador = new Map<string, string>()
   for (const avance of avances) {
     if (avance.estado !== 'validado') continue
     ejecutadoPorGenerador.set(
       avance.generador_id,
       (ejecutadoPorGenerador.get(avance.generador_id) ?? 0) + Number(avance.cantidad),
+    )
+    validadosPorGenerador.set(
+      avance.generador_id,
+      (validadosPorGenerador.get(avance.generador_id) ?? 0) + 1,
     )
     const actual = primerAvancePorGenerador.get(avance.generador_id)
     if (!actual || avance.fecha < actual) {
@@ -149,8 +154,14 @@ export function Avance() {
       finProyectado,
       atraso,
       estado,
+      generador: generadores.find(
+        (generador) => generador.id === actividad.generador_id,
+      ),
+      validados: validadosPorGenerador.get(actividad.generador_id ?? '') ?? 0,
     }
   })
+
+  const sinConcepto = filas.filter((fila) => !fila.actividad.generador_id)
 
   const totalCantidad = filas.reduce(
     (total, fila) => total + Number(fila.actividad.cantidad),
@@ -264,6 +275,16 @@ export function Avance() {
             Comparación al {formatearFecha(hoy)} · desviaciones y riesgo de plazo.
           </p>
         </div>
+        <div className="acciones">
+          <button
+            type="button"
+            className="boton"
+            onClick={() => consulta.recargar()}
+            disabled={consulta.cargando}
+          >
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {proyectosConsulta.error ? (
@@ -302,6 +323,15 @@ export function Avance() {
               </span>
             </div>
           </section>
+
+          {sinConcepto.length > 0 ? (
+            <Aviso tipo="error">
+              {sinConcepto.length} actividad(es) no están vinculadas a un concepto:
+              {' '}
+              {sinConcepto.map((fila) => fila.actividad.nombre).join(', ')}. Su avance real
+              no se puede calcular. Edítalas en Programa y selecciona el concepto.
+            </Aviso>
+          ) : null}
 
           {consulta.cargando && !consulta.datos ? (
             <Cargando />
@@ -443,15 +473,11 @@ export function Avance() {
                                 {fila.actividad.nombre}
                               </span>
                               <span className="celda-nota">
-                                {formatearMoneda(
-                                  Number(fila.actividad.cantidad) *
-                                    Number(
-                                      generadores.find(
-                                        (generador: Generador) =>
-                                          generador.id === fila.actividad.generador_id,
-                                      )?.precio_unitario ?? 0,
-                                    ),
-                                )}
+                                {fila.generador
+                                  ? `Concepto: ${fila.generador.descripcion}`
+                                  : 'Sin concepto vinculado'}
+                                {' · '}
+                                {fila.validados} avance(s) validado(s)
                               </span>
                             </td>
                             <td>{fila.programado.toFixed(1)}%</td>
