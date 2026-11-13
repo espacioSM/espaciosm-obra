@@ -4,6 +4,7 @@ import type {
   Asistencia,
   AsistenciaResidente,
   BajaMaterial,
+  BitacoraEntrada,
   DirectorioEmpleado,
   Empleado,
   EstadoAvanceGenerador,
@@ -564,6 +565,42 @@ export async function crearPago(datos: DatosPago): Promise<void> {
     metodo: datos.metodo,
     referencia: datos.referencia,
     nota: datos.nota,
+  })
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Bitácora
+// -----------------------------------------------------------------------------
+
+export type DatosBitacora = {
+  proyectoId: string
+  fecha: string
+  titulo: string
+  contenido: string
+  fotoPaths: string[]
+}
+
+export async function listarBitacora(proyectoId: string): Promise<BitacoraEntrada[]> {
+  const { data, error } = await supabase
+    .from('bitacora')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearEntradaBitacora(datos: DatosBitacora): Promise<void> {
+  const { error } = await supabase.from('bitacora').insert({
+    proyecto_id: datos.proyectoId,
+    fecha: datos.fecha,
+    titulo: datos.titulo,
+    contenido: datos.contenido,
+    foto_paths: datos.fotoPaths,
   })
 
   if (error) throw error

@@ -14,6 +14,7 @@ import { Generadores } from './paginas/Generadores'
 import { Estimaciones } from './paginas/Estimaciones'
 import { Solicitudes } from './paginas/Solicitudes'
 import { Pagos } from './paginas/Pagos'
+import { Bitacora } from './paginas/Bitacora'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="estimaciones" element={<Estimaciones />} />
               <Route path="solicitudes" element={<Solicitudes />} />
               <Route path="pagos" element={<Pagos />} />
+              <Route path="bitacora" element={<Bitacora />} />
               <Route path="usuarios" element={<Usuarios />} />
               <Route path="cuenta" element={<Cuenta />} />
               <Route path=":modulo" element={<Pendiente />} />

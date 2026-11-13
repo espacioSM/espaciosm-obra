@@ -249,6 +249,18 @@ export type Pago = {
   actualizado_en: string
 }
 
+export type BitacoraEntrada = {
+  id: string
+  proyecto_id: string
+  fecha: string
+  titulo: string
+  contenido: string
+  foto_paths: string[]
+  registrado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
 export type BajaMaterial = {
   id: string
   material_id: string
@@ -708,6 +720,25 @@ export type Database = {
           metodo?: MetodoPago
           referencia?: string | null
           nota?: string | null
+        }
+        Relationships: []
+      }
+      bitacora: {
+        Row: BitacoraEntrada
+        Insert: {
+          id?: string
+          proyecto_id: string
+          fecha?: string
+          titulo: string
+          contenido: string
+          foto_paths?: string[]
+          registrado_por?: string | null
+        }
+        Update: {
+          fecha?: string
+          titulo?: string
+          contenido?: string
+          foto_paths?: string[]
         }
         Relationships: []
       }

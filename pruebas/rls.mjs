@@ -167,6 +167,10 @@ try {
   ok('0024 pagos')
   await ejecutar('0024_pagos.sql')
   ok('0024 pagos repetible')
+  await ejecutar('0025_bitacora.sql')
+  ok('0025 bitácora')
+  await ejecutar('0025_bitacora.sql')
+  ok('0025 bitácora repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -815,6 +819,19 @@ try {
   const pagosResidente = await db.query('select count(*)::int as n from public.pagos')
   if (pagosResidente.rows[0].n === 0) ok('residente no ve pagos')
   else fallo('residente no ve pagos', `vio ${pagosResidente.rows[0].n}`)
+
+  await db.exec(`
+    insert into public.bitacora (proyecto_id, fecha, titulo, contenido)
+    values ('${P1}', (now() at time zone 'America/Mexico_City')::date, 'Visita', 'Sin incidencias')
+  `)
+  const bitacoraResidente = await db.query('select count(*)::int as n from public.bitacora')
+  if (bitacoraResidente.rows[0].n === 1) ok('residente escribe bitácora')
+  else fallo('residente escribe bitácora', `vio ${bitacoraResidente.rows[0].n}`)
+
+  await como(MED)
+  const bitacoraOficina = await db.query('select count(*)::int as n from public.bitacora')
+  if (bitacoraOficina.rows[0].n === 1) ok('oficina consulta bitácora')
+  else fallo('oficina consulta bitácora', `vio ${bitacoraOficina.rows[0].n}`)
 
   await como(ADMIN)
   await esperarError(
