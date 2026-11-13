@@ -549,6 +549,7 @@ export type DatosAvanceGenerador = {
   estado: EstadoAvanceGenerador
   observaciones: string | null
   respuestaResidente: string | null
+  fotoPath: string | null
   nota: string | null
   usuarioId: string | null
 }
@@ -616,6 +617,7 @@ export async function crearAvanceGenerador(
     estado: datos.estado,
     observaciones: datos.observaciones,
     respuesta_residente: datos.respuestaResidente,
+    foto_path: datos.fotoPath,
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
@@ -642,6 +644,7 @@ export async function actualizarAvanceGenerador(
       piezas: datos.piezas,
       estado: datos.estado,
       respuesta_residente: datos.respuestaResidente,
+      foto_path: datos.fotoPath,
       nota: datos.nota,
     })
     .eq('id', avanceId)

@@ -151,6 +151,10 @@ try {
   ok('0019 corregir rechazado')
   await ejecutar('0019_corregir_rechazado.sql')
   ok('0019 corregir rechazado repetible')
+  await ejecutar('0020_foto_avance.sql')
+  ok('0020 foto de avance')
+  await ejecutar('0020_foto_avance.sql')
+  ok('0020 foto de avance repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values

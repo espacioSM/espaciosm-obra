@@ -14,6 +14,7 @@ import {
 import type { EstadoAvanceGenerador, GeneradorAvance } from '../lib/tipos'
 import { formatearFecha, formatearMoneda, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
+import { subirEvidencia, urlEvidencia } from '../lib/evidencias'
 import { Aviso } from '../componentes/Aviso'
 import { Cargando, Vacio } from '../componentes/Estados'
 import { Insignia } from '../componentes/Insignias'
@@ -76,6 +77,9 @@ export function Generadores() {
   const [nota, setNota] = useState('')
   const [respuestaResidente, setRespuestaResidente] = useState('')
   const [avanceEditando, setAvanceEditando] = useState<GeneradorAvance | null>(null)
+  const [fotoFile, setFotoFile] = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  const [fotoPathActual, setFotoPathActual] = useState<string | null>(null)
   const formAvanceRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -200,27 +204,52 @@ export function Generadores() {
     setGuardandoAvance(true)
     setAviso(null)
 
-    const datos = {
-      generadorId,
-      fecha,
-      cantidad: Math.round(cantidadFinal * 100) / 100,
-      nivel: nivel.trim() === '' ? null : nivel.trim(),
-      eje: eje.trim() === '' ? null : eje.trim(),
-      tramo: tramo.trim() === '' ? null : tramo.trim(),
-      frente: frente.trim() === '' ? null : frente.trim(),
-      largo: largoNumero > 0 ? largoNumero : null,
-      ancho: anchoNumero > 0 ? anchoNumero : null,
-      alto: altoNumero > 0 ? altoNumero : null,
-      piezas: piezasNumero > 0 ? piezasNumero : 1,
-      estado: 'enviado' as const,
-      observaciones: null,
-      respuestaResidente:
-        respuestaResidente.trim() === '' ? null : respuestaResidente.trim(),
-      nota: nota.trim() === '' ? null : nota.trim(),
-      usuarioId,
-    }
+    let fotoPath = fotoPathActual
 
     try {
+      if (fotoFile) {
+        const proyecto = proyectos.find((item) => item.id === proyectoId)
+        const sello = new Intl.DateTimeFormat('es-MX', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+          timeZone: 'America/Mexico_City',
+        }).format(new Date())
+        const ubicacion =
+          [nivel, eje, tramo, frente].filter((valor) => valor.trim() !== '').join(' · ') ||
+          'Sin ubicación'
+
+        fotoPath = await subirEvidencia(proyectoId, generadorId, fotoFile, [
+          `espacioSM Obra · ${proyecto?.nombre ?? 'Proyecto'}`,
+          sello,
+          `Ubicación: ${ubicacion}`,
+          `Concepto: ${generadorSeleccionado?.descripcion ?? 'Sin concepto'}`,
+          `Cantidad: ${cantidadFinal.toFixed(2)} ${
+            generadorSeleccionado?.unidad ?? ''
+          }`,
+        ])
+      }
+
+      const datos = {
+        generadorId,
+        fecha,
+        cantidad: Math.round(cantidadFinal * 100) / 100,
+        nivel: nivel.trim() === '' ? null : nivel.trim(),
+        eje: eje.trim() === '' ? null : eje.trim(),
+        tramo: tramo.trim() === '' ? null : tramo.trim(),
+        frente: frente.trim() === '' ? null : frente.trim(),
+        largo: largoNumero > 0 ? largoNumero : null,
+        ancho: anchoNumero > 0 ? anchoNumero : null,
+        alto: altoNumero > 0 ? altoNumero : null,
+        piezas: piezasNumero > 0 ? piezasNumero : 1,
+        estado: 'enviado' as const,
+        observaciones: null,
+        respuestaResidente:
+          respuestaResidente.trim() === '' ? null : respuestaResidente.trim(),
+        fotoPath,
+        nota: nota.trim() === '' ? null : nota.trim(),
+        usuarioId,
+      }
+
       if (avanceEditando) {
         await actualizarAvanceGenerador(avanceEditando.id, datos)
       } else {
@@ -238,6 +267,9 @@ export function Generadores() {
       setTramo('')
       setFrente('')
       setNota('')
+      setFotoFile(null)
+      setFotoPreview(null)
+      setFotoPathActual(null)
       consulta.recargar()
       setAviso({
         tipo: 'exito',
@@ -268,6 +300,9 @@ export function Generadores() {
     setCantidadAvance(String(avance.cantidad))
     setNota(avance.nota ?? '')
     setRespuestaResidente(avance.respuesta_residente ?? '')
+    setFotoPathActual(avance.foto_path)
+    setFotoFile(null)
+    setFotoPreview(null)
     setAviso(null)
     window.setTimeout(() => {
       formAvanceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -749,6 +784,43 @@ export function Generadores() {
                           </div>
                         ) : null}
 
+                        <div className="campo campo--ancho">
+                          <label className="campo__etiqueta" htmlFor="av-foto">
+                            Foto de evidencia
+                          </label>
+                          <input
+                            id="av-foto"
+                            className="campo__control"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(evento) => {
+                              const archivo = evento.target.files?.[0] ?? null
+                              setFotoFile(archivo)
+                              if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+                              setFotoPreview(
+                                archivo ? URL.createObjectURL(archivo) : null,
+                              )
+                            }}
+                          />
+                          <span className="campo__ayuda">
+                            La app agrega proyecto, fecha, ubicación y concepto sobre la
+                            foto.
+                          </span>
+                          {fotoPreview ? (
+                            <img
+                              className="foto-previa"
+                              src={fotoPreview}
+                              alt="Vista previa de la evidencia"
+                            />
+                          ) : null}
+                          {fotoPathActual && !fotoFile ? (
+                            <span className="campo__ayuda">
+                              Este avance ya tiene foto. Si eliges otra, se reemplaza.
+                            </span>
+                          ) : null}
+                        </div>
+
                         <div className="acciones campo--ancho">
                           <button
                             type="submit"
@@ -861,6 +933,7 @@ export function Generadores() {
                           <th scope="col">Fecha</th>
                           <th scope="col">Concepto</th>
                           <th scope="col">Ubicación</th>
+                          <th scope="col">Foto</th>
                           <th scope="col">Cantidad</th>
                           <th scope="col">Estado</th>
                           <th scope="col">Observaciones</th>
@@ -889,6 +962,9 @@ export function Generadores() {
                                 {[avance.nivel, avance.eje, avance.tramo, avance.frente]
                                   .filter(Boolean)
                                   .join(' · ') || 'Sin ubicación'}
+                              </td>
+                              <td>
+                                <FotoAvance ruta={avance.foto_path} />
                               </td>
                               <td>
                                 {Number(avance.cantidad).toFixed(2)}{' '}
@@ -981,5 +1057,38 @@ export function Generadores() {
         </>
       )}
     </div>
+  )
+}
+
+function FotoAvance({ ruta }: { ruta: string | null }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let vigente = true
+    setUrl(null)
+    setError(false)
+
+    if (!ruta) return
+
+    void urlEvidencia(ruta).then((resultado) => {
+      if (!vigente) return
+      if (resultado) setUrl(resultado)
+      else setError(true)
+    })
+
+    return () => {
+      vigente = false
+    }
+  }, [ruta])
+
+  if (!ruta) return <span className="seccion__nota">—</span>
+  if (error) return <span className="seccion__nota">No disponible</span>
+  if (!url) return <span className="seccion__nota">Cargando…</span>
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      <img className="foto-miniatura" src={url} alt="Evidencia del avance" />
+    </a>
   )
 }
