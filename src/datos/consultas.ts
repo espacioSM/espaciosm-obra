@@ -5,6 +5,7 @@ import type {
   AsistenciaResidente,
   BajaMaterial,
   BitacoraEntrada,
+  CobroCliente,
   ComentarioBitacora,
   DirectorioEmpleado,
   Empleado,
@@ -23,6 +24,7 @@ import type {
   PeriodoPago,
   PartidaDisponible,
   Pago,
+  Presupuesto,
   Proyecto,
   ProyectoMiembro,
   ResidenteEnObra,
@@ -30,6 +32,7 @@ import type {
   SolicitudRecurso,
   TipoMovimientoMaterial,
   TipoPago,
+  TipoCobro,
   MetodoPago,
   TipoSolicitud,
   PrioridadSolicitud,
@@ -1016,4 +1019,79 @@ export async function cargarResumen(): Promise<ResumenObra> {
     sinSalida: listaAsistencia.filter((registro) => !registro.hora_salida).length,
     personalPorProyecto,
   }
+}
+
+// -----------------------------------------------------------------------------
+// Presupuesto y cobros del cliente
+// -----------------------------------------------------------------------------
+
+export async function obtenerPresupuesto(
+  proyectoId: string,
+): Promise<Presupuesto | null> {
+  const { data, error } = await supabase
+    .from('presupuestos')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function guardarPresupuesto(
+  proyectoId: string,
+  montoContrato: number,
+  anticipoPorcentaje: number,
+  notas: string | null,
+): Promise<void> {
+  const { error } = await supabase.from('presupuestos').upsert(
+    {
+      proyecto_id: proyectoId,
+      monto_contrato: montoContrato,
+      anticipo_porcentaje: anticipoPorcentaje,
+      notas,
+      actualizado_por: null,
+    },
+    { onConflict: 'proyecto_id' },
+  )
+
+  if (error) throw error
+}
+
+export async function listarCobrosCliente(
+  proyectoId: string,
+): Promise<CobroCliente[]> {
+  const { data, error } = await supabase
+    .from('cobros_cliente')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export type DatosCobroCliente = {
+  proyectoId: string
+  estimacionId: string | null
+  tipo: TipoCobro
+  monto: number
+  fecha: string
+  referencia: string | null
+  nota: string | null
+}
+
+export async function crearCobroCliente(datos: DatosCobroCliente): Promise<void> {
+  const { error } = await supabase.from('cobros_cliente').insert({
+    proyecto_id: datos.proyectoId,
+    estimacion_id: datos.estimacionId,
+    tipo: datos.tipo,
+    monto: datos.monto,
+    fecha: datos.fecha,
+    referencia: datos.referencia,
+    nota: datos.nota,
+  })
+
+  if (error) throw error
 }

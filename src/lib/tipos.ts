@@ -236,6 +236,31 @@ export type EstadoBajaMaterial = 'pendiente' | 'aprobada' | 'rechazada'
 export type TipoPago = 'personal' | 'proveedor' | 'contratista' | 'otro'
 export type MetodoPago = 'efectivo' | 'transferencia' | 'cheque' | 'otro'
 
+export type TipoCobro = 'anticipo' | 'estimacion' | 'liquidacion' | 'otro'
+
+export type Presupuesto = {
+  proyecto_id: string
+  monto_contrato: number
+  anticipo_porcentaje: number
+  notas: string | null
+  actualizado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type CobroCliente = {
+  id: string
+  proyecto_id: string
+  estimacion_id: string | null
+  tipo: TipoCobro
+  monto: number
+  fecha: string
+  referencia: string | null
+  nota: string | null
+  registrado_por: string | null
+  creado_en: string
+}
+
 export type Pago = {
   id: string
   proyecto_id: string
@@ -709,6 +734,39 @@ export type Database = {
           estado?: EstadoBajaMaterial
           respuesta?: string | null
         }
+        Relationships: []
+      }
+      presupuestos: {
+        Row: Presupuesto
+        Insert: {
+          proyecto_id: string
+          monto_contrato?: number
+          anticipo_porcentaje?: number
+          notas?: string | null
+          actualizado_por?: string | null
+        }
+        Update: {
+          monto_contrato?: number
+          anticipo_porcentaje?: number
+          notas?: string | null
+          actualizado_por?: string | null
+        }
+        Relationships: []
+      }
+      cobros_cliente: {
+        Row: CobroCliente
+        Insert: {
+          id?: string
+          proyecto_id: string
+          estimacion_id?: string | null
+          tipo: TipoCobro
+          monto: number
+          fecha?: string
+          referencia?: string | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: Record<string, never>
         Relationships: []
       }
       pagos: {

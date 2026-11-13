@@ -199,6 +199,14 @@ try {
   ok('0032 solicitud no vacía')
   await ejecutar('0032_solicitud_no_vacia.sql')
   ok('0032 solicitud no vacía repetible')
+  await ejecutar('0033_solicitud_sin_filtro_fecha.sql')
+  ok('0033 solicitud sin filtro de fecha')
+  await ejecutar('0033_solicitud_sin_filtro_fecha.sql')
+  ok('0033 solicitud sin filtro de fecha repetible')
+  await ejecutar('0034_presupuesto_cobros.sql')
+  ok('0034 presupuesto y cobros')
+  await ejecutar('0034_presupuesto_cobros.sql')
+  ok('0034 presupuesto y cobros repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -842,10 +850,41 @@ try {
   else fallo('pago marca estimación pagada', JSON.stringify(estimacionPagada.rows[0]))
   ok('admin registra pago')
 
+  await db.query(`
+    insert into public.presupuestos (proyecto_id, monto_contrato, anticipo_porcentaje)
+    values ('${P1}', 100000, 20)
+    on conflict (proyecto_id) do update
+      set monto_contrato = excluded.monto_contrato,
+          anticipo_porcentaje = excluded.anticipo_porcentaje
+  `)
+  await db.query(`
+    insert into public.cobros_cliente (proyecto_id, tipo, monto)
+    values ('${P1}', 'anticipo', 20000)
+  `)
+  ok('admin registra presupuesto y cobro')
+
   await como(MED)
   const pagosOficina = await db.query('select count(*)::int as n from public.pagos')
   if (pagosOficina.rows[0].n === 1) ok('oficina consulta pagos')
   else fallo('oficina consulta pagos', `vio ${pagosOficina.rows[0].n}`)
+
+  const presupuestoOficina = await db.query(
+    'select count(*)::int as n from public.presupuestos',
+  )
+  const cobrosOficina = await db.query(
+    'select count(*)::int as n from public.cobros_cliente',
+  )
+  if (presupuestoOficina.rows[0].n === 1 && cobrosOficina.rows[0].n === 1) {
+    ok('oficina consulta presupuesto y cobros')
+  } else {
+    fallo(
+      'oficina consulta presupuesto y cobros',
+      `${presupuestoOficina.rows[0].n}/${cobrosOficina.rows[0].n}`,
+    )
+  }
+
+  await esperarError('oficina no registra cobros', () =>
+    db.exec(`insert into public.cobros_cliente (proyecto_id, tipo, monto) values ('${P1}', 'otro', 1)`), '42501')
 
   await esperarError('oficina no registra pagos', () =>
     db.exec(`insert into public.pagos (proyecto_id, beneficiario, concepto, monto) values ('${P1}', 'Ajeno', 'Ajeno', 1)`), '42501')
@@ -854,6 +893,12 @@ try {
   const pagosResidente = await db.query('select count(*)::int as n from public.pagos')
   if (pagosResidente.rows[0].n === 0) ok('residente no ve pagos')
   else fallo('residente no ve pagos', `vio ${pagosResidente.rows[0].n}`)
+
+  const presupuestoResidente = await db.query(
+    'select count(*)::int as n from public.presupuestos',
+  )
+  if (presupuestoResidente.rows[0].n === 0) ok('residente no ve presupuesto')
+  else fallo('residente no ve presupuesto', `vio ${presupuestoResidente.rows[0].n}`)
 
   await db.exec(`
     insert into public.bitacora (proyecto_id, fecha, titulo, contenido)

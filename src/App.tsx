@@ -16,6 +16,7 @@ import { Solicitudes } from './paginas/Solicitudes'
 import { Pagos } from './paginas/Pagos'
 import { Bitacora } from './paginas/Bitacora'
 import { Reportes } from './paginas/Reportes'
+import { Presupuesto } from './paginas/Presupuesto'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="estimaciones" element={<Estimaciones />} />
               <Route path="solicitudes" element={<Solicitudes />} />
               <Route path="pagos" element={<Pagos />} />
+              <Route path="presupuesto" element={<Presupuesto />} />
               <Route path="bitacora" element={<Bitacora />} />
               <Route path="reportes" element={<Reportes />} />
               <Route path="usuarios" element={<Usuarios />} />

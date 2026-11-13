@@ -2,7 +2,7 @@
 -- espacioSM Obra · Instalación completa para un proyecto nuevo
 -- Archivo: supabase/instalacion_completa.sql
 --
--- Ejecutar UNA sola vez en un proyecto Supabase vacío. Incluye 0001 a 0032.
+-- Ejecutar UNA sola vez en un proyecto Supabase vacío. Incluye 0001 a 0034.
 -- Después de ejecutarlo, crea la cuenta admin en Authentication y promuévela
 -- con el bloque de promoción que está al final de este archivo.
 -- =============================================================================
@@ -5775,6 +5775,298 @@ where e.numero like 'SOL-%'
 -- -----------------------------------------------------------------------------
 
 select count(*) as estimaciones from public.estimaciones;
+
+-- ############################################################################
+-- INICIO 0033_solicitud_sin_filtro_fecha.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Solicitud con avances reales, sin filtro de periodo
+-- Archivo: supabase/migrations/0033_solicitud_sin_filtro_fecha.sql
+--
+-- Ejecutar después de 0032.
+--
+-- La solicitud toma todos los avances validados del residente para los
+-- generadores seleccionados, calcula el periodo con sus fechas reales y evita
+-- que un desfase de fechas deje la solicitud vacía.
+-- =============================================================================
+
+create or replace function public.solicitar_estimacion(
+  p_proyecto_id uuid,
+  p_numero text,
+  p_fecha_inicio date,
+  p_fecha_fin date,
+  p_retencion numeric,
+  p_notas text,
+  p_generador_ids uuid[]
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_estimacion uuid;
+  v_generador record;
+  v_propios numeric(12, 2);
+  v_todos numeric(12, 2);
+  v_estimado numeric(12, 2);
+  v_cantidad numeric(12, 2);
+  v_base text;
+  v_numero text;
+  v_secuencia integer := 1;
+  v_partidas integer := 0;
+  v_inicio date;
+  v_fin date;
+begin
+  if public.rol_actual() <> 'residente'
+     or not public.puede('estimaciones', 'crear')
+     or not public.tiene_acceso_proyecto(p_proyecto_id) then
+    raise exception 'Sin permiso para solicitar estimaciones'
+      using errcode = '42501';
+  end if;
+
+  if p_retencion < 0 or p_retencion > 100 then
+    raise exception 'La retención debe estar entre 0 y 100'
+      using errcode = '23514';
+  end if;
+
+  if coalesce(array_length(p_generador_ids, 1), 0) = 0 then
+    raise exception 'Selecciona al menos una partida para solicitar la estimación'
+      using errcode = '23514';
+  end if;
+
+  select min(a.fecha), max(a.fecha)
+    into v_inicio, v_fin
+  from public.generador_avances a
+  join public.generadores g on g.id = a.generador_id
+  join unnest(p_generador_ids) as sel(id) on sel.id = g.id
+  where g.proyecto_id = p_proyecto_id
+    and g.activo
+    and a.estado = 'validado'
+    and a.registrado_por = auth.uid();
+
+  if v_inicio is null or v_fin is null then
+    raise exception 'No hay avances disponibles para las partidas seleccionadas'
+      using errcode = '23514';
+  end if;
+
+  if v_fin < v_inicio then
+    raise exception 'La fecha final debe ser posterior a la inicial'
+      using errcode = '23514';
+  end if;
+
+  v_base := 'SOL-' || to_char(
+    (now() at time zone 'America/Mexico_City')::date,
+    'YYYYMMDD'
+  );
+  v_numero := v_base;
+
+  while exists (
+    select 1
+    from public.estimaciones e
+    where e.proyecto_id = p_proyecto_id
+      and e.numero = v_numero
+  ) loop
+    v_secuencia := v_secuencia + 1;
+    v_numero := v_base || '-' || lpad(v_secuencia::text, 2, '0');
+  end loop;
+
+  insert into public.estimaciones
+    (proyecto_id, numero, fecha_inicio, fecha_fin, retencion_porcentaje,
+     notas, estado, solicitado_por)
+  values
+    (p_proyecto_id, v_numero, v_inicio, v_fin, p_retencion,
+     p_notas, 'enviada', auth.uid())
+  returning id into v_estimacion;
+
+  for v_generador in
+    select distinct g.id, g.clave, g.descripcion, g.unidad, g.precio_unitario
+    from public.generadores g
+    join unnest(p_generador_ids) as sel(id) on sel.id = g.id
+    where g.proyecto_id = p_proyecto_id
+      and g.activo
+  loop
+    select coalesce(sum(a.cantidad), 0)
+      into v_propios
+    from public.generador_avances a
+    where a.generador_id = v_generador.id
+      and a.estado = 'validado'
+      and a.registrado_por = auth.uid();
+
+    select coalesce(sum(a.cantidad), 0)
+      into v_todos
+    from public.generador_avances a
+    where a.generador_id = v_generador.id
+      and a.estado = 'validado';
+
+    select coalesce(sum(ep.cantidad), 0)
+      into v_estimado
+    from public.estimacion_partidas ep
+    join public.estimaciones e on e.id = ep.estimacion_id
+    where ep.generador_id = v_generador.id
+      and e.proyecto_id = p_proyecto_id;
+
+    v_cantidad := least(v_propios, greatest(v_todos - v_estimado, 0));
+
+    if v_cantidad > 0.005 then
+      insert into public.estimacion_partidas
+        (estimacion_id, generador_id, clave, descripcion, unidad, cantidad, precio_unitario)
+      values
+        (
+          v_estimacion,
+          v_generador.id,
+          v_generador.clave,
+          v_generador.descripcion,
+          v_generador.unidad,
+          round(v_cantidad, 2),
+          v_generador.precio_unitario
+        );
+
+      v_partidas := v_partidas + 1;
+    end if;
+  end loop;
+
+  if v_partidas = 0 then
+    delete from public.estimaciones where id = v_estimacion;
+    raise exception 'No hay avances disponibles para las partidas seleccionadas'
+      using errcode = '23514';
+  end if;
+
+  return v_estimacion;
+end;
+$$;
+
+revoke all on function public.solicitar_estimacion(
+  uuid, text, date, date, numeric, text, uuid[]
+) from public, anon;
+grant execute on function public.solicitar_estimacion(
+  uuid, text, date, date, numeric, text, uuid[]
+) to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- Verificación
+-- -----------------------------------------------------------------------------
+
+select count(*) as avances from public.generador_avances where estado = 'validado';
+
+-- ############################################################################
+-- INICIO 0034_presupuesto_cobros.sql
+-- ############################################################################
+
+-- =============================================================================
+-- espacioSM Obra · Presupuesto y cobros del cliente
+-- Archivo: supabase/migrations/0034_presupuesto_cobros.sql
+--
+-- Ejecutar después de 0033.
+--
+-- Registra el monto contractual, el anticipo y los cobros al cliente:
+-- anticipo, pago por estimación y liquidación.
+-- =============================================================================
+
+do $$
+begin
+  create type public.tipo_cobro as enum ('anticipo', 'estimacion', 'liquidacion', 'otro');
+exception
+  when duplicate_object then null;
+end;
+$$;
+
+create table if not exists public.presupuestos (
+  proyecto_id uuid primary key references public.proyectos (id) on delete cascade,
+  monto_contrato numeric(14, 2) not null default 0,
+  anticipo_porcentaje numeric(5, 2) not null default 0,
+  notas text,
+  actualizado_por uuid references public.perfiles (id),
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  constraint presupuesto_monto_no_negativo check (monto_contrato >= 0),
+  constraint presupuesto_anticipo_valido
+    check (anticipo_porcentaje >= 0 and anticipo_porcentaje <= 100)
+);
+
+create table if not exists public.cobros_cliente (
+  id uuid primary key default gen_random_uuid(),
+  proyecto_id uuid not null references public.proyectos (id) on delete cascade,
+  estimacion_id uuid references public.estimaciones (id) on delete set null,
+  tipo public.tipo_cobro not null,
+  monto numeric(14, 2) not null,
+  fecha date not null default current_date,
+  referencia text,
+  nota text,
+  registrado_por uuid references public.perfiles (id) default auth.uid(),
+  creado_en timestamptz not null default now(),
+  constraint cobro_monto_positivo check (monto > 0)
+);
+
+create index if not exists cobros_cliente_proyecto_fecha_idx
+  on public.cobros_cliente (proyecto_id, fecha desc);
+
+drop trigger if exists presupuestos_actualizado on public.presupuestos;
+create trigger presupuestos_actualizado
+before update on public.presupuestos
+for each row execute function public.marcar_actualizado();
+
+alter table public.presupuestos enable row level security;
+alter table public.cobros_cliente enable row level security;
+
+revoke all on public.presupuestos from anon;
+revoke all on public.cobros_cliente from anon;
+grant select, insert, update on public.presupuestos to authenticated;
+grant select, insert on public.cobros_cliente to authenticated;
+
+drop policy if exists presupuestos_select on public.presupuestos;
+create policy presupuestos_select on public.presupuestos
+for select to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('pagos', 'ver')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+drop policy if exists presupuestos_insert on public.presupuestos;
+create policy presupuestos_insert on public.presupuestos
+for insert to authenticated
+with check (public.es_admin());
+
+drop policy if exists presupuestos_update on public.presupuestos;
+create policy presupuestos_update on public.presupuestos
+for update to authenticated
+using (public.es_admin())
+with check (public.es_admin());
+
+drop policy if exists cobros_cliente_select on public.cobros_cliente;
+create policy cobros_cliente_select on public.cobros_cliente
+for select to authenticated
+using (
+  public.es_admin()
+  or (
+    public.puede('pagos', 'ver')
+    and public.tiene_acceso_proyecto(proyecto_id)
+  )
+);
+
+drop policy if exists cobros_cliente_insert on public.cobros_cliente;
+create policy cobros_cliente_insert on public.cobros_cliente
+for insert to authenticated
+with check (
+  public.es_admin()
+  and registrado_por = auth.uid()
+  and public.tiene_acceso_proyecto(proyecto_id)
+);
+
+-- Los cobros son auditables: no se editan ni se borran desde la aplicación.
+drop policy if exists cobros_cliente_update on public.cobros_cliente;
+drop policy if exists cobros_cliente_delete on public.cobros_cliente;
+
+-- -----------------------------------------------------------------------------
+-- Verificación
+-- -----------------------------------------------------------------------------
+
+select count(*) as presupuestos from public.presupuestos;
+select count(*) as cobros from public.cobros_cliente;
 
 -- =============================================================================
 -- PROMOCIÓN DEL ADMINISTRADOR

@@ -35,6 +35,7 @@ export const NAVEGACION: GrupoNavegacion[] = [
         etiqueta: 'Solicitudes de recursos',
         modulo: 'solicitudes',
       },
+      { ruta: '/presupuesto', etiqueta: 'Presupuesto', modulo: 'pagos' },
       { ruta: '/pagos', etiqueta: 'Pagos', modulo: 'pagos' },
     ],
   },
