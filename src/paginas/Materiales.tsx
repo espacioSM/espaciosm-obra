@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
 import {
@@ -40,16 +40,17 @@ export function Materiales() {
   }, [proyectoId, proyectos])
 
   const consulta = useDatos(async () => {
-    if (proyectoId === '') return { materiales: [], movimientos: [] }
+    if (proyectoId === '') return { proyectoId: '', materiales: [], movimientos: [] }
     const [materiales, movimientos] = await Promise.all([
       listarMateriales(proyectoId),
       listarMovimientosMaterial(proyectoId),
     ])
-    return { materiales, movimientos }
+    return { proyectoId, materiales, movimientos }
   }, [proyectoId])
 
   const materiales = consulta.datos?.materiales ?? []
   const movimientos = consulta.datos?.movimientos ?? []
+  const datosProyectoId = consulta.datos?.proyectoId ?? ''
   const catalogoConsulta = useDatos(listarCatalogoMateriales, [])
   const catalogo = catalogoConsulta.datos ?? []
   const puedeVer = permisos.materiales?.ver === true
@@ -79,19 +80,29 @@ export function Materiales() {
   const [costoMovimiento, setCostoMovimiento] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [nota, setNota] = useState('')
+  const movimientoRef = useRef<HTMLElement | null>(null)
+  const cantidadRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
+    setMaterialId('')
+    setCostoMovimiento('')
+    setCantidad('')
+  }, [proyectoId])
+
+  useEffect(() => {
+    if (datosProyectoId !== proyectoId) return
+
     if (materiales.length === 0) {
       setMaterialId('')
       return
     }
 
-    if (!materiales.some((material) => material.id === materialId)) {
+    if (materialId === '') {
       const primero = materiales[0]
       setMaterialId(primero.id)
       setCostoMovimiento(String(primero.costo_unitario))
     }
-  }, [materiales, materialId])
+  }, [datosProyectoId, proyectoId, materiales, materialId])
 
   const nombres = new Map(materiales.map((material) => [material.id, material]))
   const stock = materiales.map((material) => {
@@ -143,8 +154,25 @@ export function Materiales() {
       .includes(texto)
   })
 
+  function enfocarMovimiento(id: string, costo: number) {
+    setMaterialId(id)
+    setCostoMovimiento(costo === 0 ? '' : String(costo))
+    setTipo('entrada')
+    setAviso({
+      tipo: 'exito',
+      texto: 'Material listo. Captura cantidad y costo en Registrar movimiento.',
+    })
+    window.setTimeout(() => {
+      movimientoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      cantidadRef.current?.focus()
+    }, 150)
+  }
+
   async function agregarDesdeCatalogo(material: MaterialCatalogo) {
-    if (codigosExistentes.has(material.codigo)) return
+    if (codigosExistentes.has(material.codigo)) {
+      usarMaterial(material.codigo)
+      return
+    }
     setAgregandoCatalogo(material.codigo)
     setAviso(null)
 
@@ -159,15 +187,19 @@ export function Materiales() {
         especificacion: material.especificacion,
         presentacion: material.presentacion,
       })
-      setMaterialId(creado.id)
-      setCostoMovimiento(String(creado.costo_unitario))
       consulta.recargar()
-      setAviso({ tipo: 'exito', texto: 'Material agregado desde el catálogo.' })
+      enfocarMovimiento(creado.id, Number(creado.costo_unitario))
     } catch (fallo) {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setAgregandoCatalogo(null)
     }
+  }
+
+  function usarMaterial(codigo: string) {
+    const material = materiales.find((item) => item.catalogo_id === codigo)
+    if (!material) return
+    enfocarMovimiento(material.id, Number(material.costo_unitario))
   }
 
   async function guardarMaterial(evento: FormEvent<HTMLFormElement>) {
@@ -355,8 +387,9 @@ export function Materiales() {
               <div>
                 <h2 className="seccion__titulo">Catálogo de proveedor</h2>
                 <p className="seccion__nota">
-                  Materiales comunes precargados. El precio es de referencia y se llena
-                  automático al agregarlos; el enlace abre Home Depot.
+                  Materiales comunes precargados. Al agregar, se abre Registrar movimiento
+                  con el material y el precio de referencia; ahí capturas cantidad y costo
+                  real. El enlace abre Home Depot.
                 </p>
               </div>
               <span className="seccion__nota">
@@ -433,7 +466,13 @@ export function Materiales() {
                           </td>
                           <td>
                             {existente ? (
-                              <Insignia tono="tenue">Ya está</Insignia>
+                              <button
+                                type="button"
+                                className="boton"
+                                onClick={() => usarMaterial(material.codigo)}
+                              >
+                                Usar
+                              </button>
                             ) : (
                               <button
                                 type="button"
@@ -443,7 +482,7 @@ export function Materiales() {
                               >
                                 {agregandoCatalogo === material.codigo
                                   ? 'Agregando…'
-                                  : 'Agregar'}
+                                  : 'Agregar y capturar'}
                               </button>
                             )}
                           </td>
@@ -461,7 +500,7 @@ export function Materiales() {
           ) : (
             <>
               <div className="rejilla-dos">
-                <section className="tarjeta">
+                <section className="tarjeta" ref={movimientoRef}>
                   <div className="seccion__cabecera">
                     <div>
                       <h2 className="seccion__titulo">Registrar movimiento</h2>
@@ -546,6 +585,7 @@ export function Materiales() {
                           </label>
                           <input
                             id="mov-cantidad"
+                            ref={cantidadRef}
                             className="campo__control"
                             inputMode="decimal"
                             value={cantidad}
