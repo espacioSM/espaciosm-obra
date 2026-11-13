@@ -179,17 +179,21 @@ export function Estimaciones() {
     const retencionNumero = validarFormulario()
     if (retencionNumero === null) return
 
-    if (seleccionadas.size === 0) {
-      setAviso({ tipo: 'error', texto: 'Selecciona al menos una partida.' })
+    const seleccionadasData = disponibles.filter((partida) =>
+      seleccionadas.has(partida.generador_id),
+    )
+
+    if (seleccionadasData.length === 0) {
+      setAviso({
+        tipo: 'error',
+        texto: 'No hay partidas disponibles seleccionadas. Actualiza los avances aprobados.',
+      })
       return
     }
 
     setCreando(true)
     setAviso(null)
 
-    const seleccionadasData = disponibles.filter((partida) =>
-      seleccionadas.has(partida.generador_id),
-    )
     const fechas = seleccionadasData
       .flatMap((partida) => [partida.fecha_min, partida.fecha_max])
       .filter((fecha): fecha is string => Boolean(fecha))
@@ -209,7 +213,7 @@ export function Estimaciones() {
               retencion: retencionNumero,
               notas: notas.trim() === '' ? null : notas.trim(),
             },
-            Array.from(seleccionadas),
+            Array.from(seleccionadasData.map((partida) => partida.generador_id)),
           )
         : await crearEstimacionSeleccion(
             {
@@ -220,7 +224,7 @@ export function Estimaciones() {
               retencion: retencionNumero,
               notas: notas.trim() === '' ? null : notas.trim(),
             },
-            Array.from(seleccionadas),
+            Array.from(seleccionadasData.map((partida) => partida.generador_id)),
           )
       setNumero('')
       setNotas('')

@@ -195,6 +195,10 @@ try {
   ok('0031 folio automático')
   await ejecutar('0031_folio_solicitud.sql')
   ok('0031 folio automático repetible')
+  await ejecutar('0032_solicitud_no_vacia.sql')
+  ok('0032 solicitud no vacía')
+  await ejecutar('0032_solicitud_no_vacia.sql')
+  ok('0032 solicitud no vacía repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
