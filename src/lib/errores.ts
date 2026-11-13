@@ -50,7 +50,13 @@ export function mensajeDeError(error: unknown): string {
   if (texto.includes('estimaciones_fechas_coherentes')) {
     return 'La fecha final de la estimación no puede ser anterior a la fecha inicial. Revisa el periodo de los avances.'
   }
+  if (texto.includes('la fecha final debe ser posterior')) {
+    return 'La fecha final de la estimación no puede ser anterior a la fecha inicial. Revisa el periodo de los avances.'
+  }
   if (texto.includes('estimaciones_retencion_valida')) {
+    return 'La retención debe ser un número entre 0 y 100.'
+  }
+  if (texto.includes('la retención debe estar entre')) {
     return 'La retención debe ser un número entre 0 y 100.'
   }
   if (texto.includes('estimaciones_numero_no_vacio')) {
