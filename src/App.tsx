@@ -11,6 +11,7 @@ import { Personal } from './paginas/Personal'
 import { Asistencia } from './paginas/Asistencia'
 import { Materiales } from './paginas/Materiales'
 import { Generadores } from './paginas/Generadores'
+import { Estimaciones } from './paginas/Estimaciones'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="asistencia" element={<Asistencia />} />
               <Route path="materiales" element={<Materiales />} />
               <Route path="generadores" element={<Generadores />} />
+              <Route path="estimaciones" element={<Estimaciones />} />
               <Route path="usuarios" element={<Usuarios />} />
               <Route path="cuenta" element={<Cuenta />} />
               <Route path=":modulo" element={<Pendiente />} />

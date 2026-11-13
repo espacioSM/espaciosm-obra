@@ -145,6 +145,35 @@ export type GeneradorAvance = {
   actualizado_en: string
 }
 
+export type EstadoEstimacion = 'borrador' | 'enviada' | 'autorizada' | 'pagada'
+
+export type Estimacion = {
+  id: string
+  proyecto_id: string
+  numero: string
+  fecha_inicio: string
+  fecha_fin: string
+  retencion_porcentaje: number
+  estado: EstadoEstimacion
+  notas: string | null
+  creado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
+export type EstimacionPartida = {
+  id: string
+  estimacion_id: string
+  generador_id: string
+  clave: string | null
+  descripcion: string
+  unidad: string
+  cantidad: number
+  precio_unitario: number
+  importe: number
+  creado_en: string
+}
+
 export type Asistencia = {
   id: string
   empleado_id: string
@@ -384,6 +413,47 @@ export type Database = {
         }
         Relationships: []
       }
+      estimaciones: {
+        Row: Estimacion
+        Insert: {
+          id?: string
+          proyecto_id: string
+          numero: string
+          fecha_inicio: string
+          fecha_fin: string
+          retencion_porcentaje?: number
+          estado?: EstadoEstimacion
+          notas?: string | null
+          creado_por?: string | null
+        }
+        Update: {
+          numero?: string
+          fecha_inicio?: string
+          fecha_fin?: string
+          retencion_porcentaje?: number
+          estado?: EstadoEstimacion
+          notas?: string | null
+        }
+        Relationships: []
+      }
+      estimacion_partidas: {
+        Row: EstimacionPartida
+        Insert: {
+          id?: string
+          estimacion_id: string
+          generador_id: string
+          clave?: string | null
+          descripcion: string
+          unidad: string
+          cantidad: number
+          precio_unitario: number
+        }
+        Update: {
+          cantidad?: number
+          precio_unitario?: number
+        }
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -420,6 +490,17 @@ export type Database = {
         Args: { p_fecha: string }
         Returns: ResidenteEnObra[]
       }
+      crear_estimacion: {
+        Args: {
+          p_proyecto_id: string
+          p_numero: string
+          p_fecha_inicio: string
+          p_fecha_fin: string
+          p_retencion: number
+          p_notas: string | null
+        }
+        Returns: string
+      }
       rol_actual: {
         Args: Record<PropertyKey, never>
         Returns: Rol | null
@@ -442,6 +523,7 @@ export type Database = {
       estado_proyecto: EstadoProyecto
       periodo_pago: PeriodoPago
       tipo_movimiento_material: TipoMovimientoMaterial
+      estado_estimacion: EstadoEstimacion
       modulo_sistema: Modulo
       accion_sistema: Accion
     }

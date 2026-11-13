@@ -5,7 +5,10 @@ import type {
   AsistenciaResidente,
   DirectorioEmpleado,
   Empleado,
+  EstadoEstimacion,
   EstadoProyecto,
+  Estimacion,
+  EstimacionPartida,
   Generador,
   GeneradorAvance,
   Material,
@@ -479,6 +482,69 @@ export async function crearAvanceGenerador(
     nota: datos.nota,
     registrado_por: datos.usuarioId ?? undefined,
   })
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Estimaciones
+// -----------------------------------------------------------------------------
+
+export type DatosEstimacion = {
+  proyectoId: string
+  numero: string
+  fechaInicio: string
+  fechaFin: string
+  retencion: number
+  notas: string | null
+}
+
+export async function listarEstimaciones(proyectoId: string): Promise<Estimacion[]> {
+  const { data, error } = await supabase
+    .from('estimaciones')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha_fin', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function listarPartidasEstimacion(
+  estimacionId: string,
+): Promise<EstimacionPartida[]> {
+  const { data, error } = await supabase
+    .from('estimacion_partidas')
+    .select('*')
+    .eq('estimacion_id', estimacionId)
+    .order('descripcion')
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearEstimacion(datos: DatosEstimacion): Promise<string> {
+  const { data, error } = await supabase.rpc('crear_estimacion', {
+    p_proyecto_id: datos.proyectoId,
+    p_numero: datos.numero,
+    p_fecha_inicio: datos.fechaInicio,
+    p_fecha_fin: datos.fechaFin,
+    p_retencion: datos.retencion,
+    p_notas: datos.notas,
+  })
+
+  if (error) throw error
+  return data
+}
+
+export async function actualizarEstadoEstimacion(
+  estimacionId: string,
+  estado: EstadoEstimacion,
+): Promise<void> {
+  const { error } = await supabase
+    .from('estimaciones')
+    .update({ estado })
+    .eq('id', estimacionId)
 
   if (error) throw error
 }

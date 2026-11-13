@@ -107,6 +107,10 @@ try {
   ok('0008 generadores')
   await ejecutar('0008_generadores.sql')
   ok('0008 generadores repetible')
+  await ejecutar('0009_estimaciones.sql')
+  ok('0009 estimaciones')
+  await ejecutar('0009_estimaciones.sql')
+  ok('0009 estimaciones repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -362,6 +366,83 @@ try {
   else fallo('oficina ve al residente en obra', `vio ${residentesOficina.rows.length}`)
 
   await como(ADMIN)
+  const estimacionCreada = await db.query(`
+    select public.crear_estimacion(
+      '${P1}',
+      'EST-01',
+      (now() at time zone 'America/Mexico_City')::date,
+      (now() at time zone 'America/Mexico_City')::date,
+      5,
+      'Corte demo'
+    ) as id
+  `)
+  const EST = estimacionCreada.rows[0].id
+  const partidasEstimacion = await db.query(
+    'select cantidad::text, precio_unitario::text, importe::text from public.estimacion_partidas where estimacion_id = $1',
+    [EST],
+  )
+  if (
+    partidasEstimacion.rows.length === 1 &&
+    Number(partidasEstimacion.rows[0].cantidad) === 40 &&
+    Number(partidasEstimacion.rows[0].importe) === 10000
+  ) {
+    ok('estimación calculada desde avances')
+  } else {
+    fallo('estimación calculada desde avances', JSON.stringify(partidasEstimacion.rows))
+  }
+
+  const segundaEstimacion = await db.query(`
+    select public.crear_estimacion(
+      '${P1}',
+      'EST-02',
+      (now() at time zone 'America/Mexico_City')::date,
+      (now() at time zone 'America/Mexico_City')::date,
+      0,
+      null
+    ) as id
+  `)
+  const partidasSegunda = await db.query(
+    'select count(*)::int as n from public.estimacion_partidas where estimacion_id = $1',
+    [segundaEstimacion.rows[0].id],
+  )
+  if (partidasSegunda.rows[0].n === 0) ok('no duplica cantidades ya estimadas')
+  else fallo('no duplica cantidades ya estimadas', `vio ${partidasSegunda.rows[0].n}`)
+
+  await como(MED)
+  const partidasOficina = await db.query(
+    'select count(*)::int as n from public.estimacion_partidas where estimacion_id = $1',
+    [EST],
+  )
+  if (partidasOficina.rows[0].n === 1) ok('permiso medio consulta partidas')
+  else fallo('permiso medio consulta partidas', `vio ${partidasOficina.rows[0].n}`)
+
+  await esperarError('permiso medio no crea estimaciones', () =>
+    db.exec(`
+      select public.crear_estimacion(
+        '${P1}', 'EST-03',
+        (now() at time zone 'America/Mexico_City')::date,
+        (now() at time zone 'America/Mexico_City')::date,
+        0, null
+      )
+    `), '42501')
+
+  const cambioEstadoOficina = await db.query(
+    `update public.estimaciones set estado = 'enviada' where id = '${EST}' returning id`,
+  )
+  if (cambioEstadoOficina.rows.length === 0) ok('permiso medio no cambia el estado')
+  else fallo('permiso medio no cambia el estado', 'actualizó una fila')
+
+  await como(RES)
+  const estimacionesResidente = await db.query('select count(*)::int as n from public.estimaciones')
+  if (estimacionesResidente.rows[0].n === 0) ok('residente no ve estimaciones')
+  else fallo('residente no ve estimaciones', `vio ${estimacionesResidente.rows[0].n}`)
+
+  await como(ADMIN)
+  await db.exec(`update public.estimaciones set estado = 'enviada' where id = '${EST}'`)
+  const estadoAdmin = await db.query('select estado from public.estimaciones where id = $1', [EST])
+  if (estadoAdmin.rows[0]?.estado === 'enviada') ok('admin cambia estado de estimación')
+  else fallo('admin cambia estado de estimación', JSON.stringify(estadoAdmin.rows[0]))
+
   await esperarError(
     'admin no se degrada a sí mismo',
     () => db.exec(`update public.perfiles set rol = 'residente' where id = '${ADMIN}'`),
