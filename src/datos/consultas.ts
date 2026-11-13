@@ -20,12 +20,15 @@ import type {
   Perfil,
   PeriodoPago,
   PartidaDisponible,
+  Pago,
   Proyecto,
   ProyectoMiembro,
   ResidenteEnObra,
   Rol,
   SolicitudRecurso,
   TipoMovimientoMaterial,
+  TipoPago,
+  MetodoPago,
   TipoSolicitud,
   PrioridadSolicitud,
   EstadoSolicitud,
@@ -517,6 +520,50 @@ export async function responderBajaMaterial(
     p_baja_id: bajaId,
     p_estado: estado,
     p_respuesta: respuesta,
+  })
+
+  if (error) throw error
+}
+
+// -----------------------------------------------------------------------------
+// Pagos
+// -----------------------------------------------------------------------------
+
+export type DatosPago = {
+  proyectoId: string
+  tipo: TipoPago
+  beneficiario: string
+  concepto: string
+  monto: number
+  fecha: string
+  metodo: MetodoPago
+  referencia: string | null
+  nota: string | null
+}
+
+export async function listarPagos(proyectoId: string): Promise<Pago[]> {
+  const { data, error } = await supabase
+    .from('pagos')
+    .select('*')
+    .eq('proyecto_id', proyectoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearPago(datos: DatosPago): Promise<void> {
+  const { error } = await supabase.from('pagos').insert({
+    proyecto_id: datos.proyectoId,
+    tipo: datos.tipo,
+    beneficiario: datos.beneficiario,
+    concepto: datos.concepto,
+    monto: datos.monto,
+    fecha: datos.fecha,
+    metodo: datos.metodo,
+    referencia: datos.referencia,
+    nota: datos.nota,
   })
 
   if (error) throw error

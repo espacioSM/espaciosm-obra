@@ -230,6 +230,25 @@ export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada' | 'atendida
 
 export type EstadoBajaMaterial = 'pendiente' | 'aprobada' | 'rechazada'
 
+export type TipoPago = 'personal' | 'proveedor' | 'contratista' | 'otro'
+export type MetodoPago = 'efectivo' | 'transferencia' | 'cheque' | 'otro'
+
+export type Pago = {
+  id: string
+  proyecto_id: string
+  tipo: TipoPago
+  beneficiario: string
+  concepto: string
+  monto: number
+  fecha: string
+  metodo: MetodoPago
+  referencia: string | null
+  nota: string | null
+  registrado_por: string | null
+  creado_en: string
+  actualizado_en: string
+}
+
 export type BajaMaterial = {
   id: string
   material_id: string
@@ -665,6 +684,33 @@ export type Database = {
         }
         Relationships: []
       }
+      pagos: {
+        Row: Pago
+        Insert: {
+          id?: string
+          proyecto_id: string
+          tipo?: TipoPago
+          beneficiario: string
+          concepto: string
+          monto: number
+          fecha?: string
+          metodo?: MetodoPago
+          referencia?: string | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          tipo?: TipoPago
+          beneficiario?: string
+          concepto?: string
+          monto?: number
+          fecha?: string
+          metodo?: MetodoPago
+          referencia?: string | null
+          nota?: string | null
+        }
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -788,6 +834,8 @@ export type Database = {
       estado_solicitud: EstadoSolicitud
       estado_baja_material: EstadoBajaMaterial
       estado_avance_generador: EstadoAvanceGenerador
+      tipo_pago: TipoPago
+      metodo_pago: MetodoPago
       modulo_sistema: Modulo
       accion_sistema: Accion
     }

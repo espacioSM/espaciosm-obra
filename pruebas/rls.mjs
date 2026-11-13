@@ -163,6 +163,10 @@ try {
   ok('0023 tres fotos')
   await ejecutar('0023_tres_fotos.sql')
   ok('0023 tres fotos repetible')
+  await ejecutar('0024_pagos.sql')
+  ok('0024 pagos')
+  await ejecutar('0024_pagos.sql')
+  ok('0024 pagos repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -788,6 +792,29 @@ try {
   } else {
     fallo('residente no corrige inventario', 'actualizó una fila')
   }
+
+  await como(ADMIN)
+  await db.query(`
+    insert into public.pagos
+      (proyecto_id, tipo, beneficiario, concepto, monto, fecha, metodo)
+    values
+      ('${P1}', 'proveedor', 'Proveedor Demo', 'Material', 1500,
+       (now() at time zone 'America/Mexico_City')::date, 'transferencia')
+  `)
+  ok('admin registra pago')
+
+  await como(MED)
+  const pagosOficina = await db.query('select count(*)::int as n from public.pagos')
+  if (pagosOficina.rows[0].n === 1) ok('oficina consulta pagos')
+  else fallo('oficina consulta pagos', `vio ${pagosOficina.rows[0].n}`)
+
+  await esperarError('oficina no registra pagos', () =>
+    db.exec(`insert into public.pagos (proyecto_id, beneficiario, concepto, monto) values ('${P1}', 'Ajeno', 'Ajeno', 1)`), '42501')
+
+  await como(RES)
+  const pagosResidente = await db.query('select count(*)::int as n from public.pagos')
+  if (pagosResidente.rows[0].n === 0) ok('residente no ve pagos')
+  else fallo('residente no ve pagos', `vio ${pagosResidente.rows[0].n}`)
 
   await como(ADMIN)
   await esperarError(
