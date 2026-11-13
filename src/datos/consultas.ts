@@ -5,6 +5,7 @@ import type {
   AsistenciaResidente,
   BajaMaterial,
   BitacoraEntrada,
+  ComentarioBitacora,
   DirectorioEmpleado,
   Empleado,
   EstadoAvanceGenerador,
@@ -601,6 +602,29 @@ export async function crearEntradaBitacora(datos: DatosBitacora): Promise<void> 
     titulo: datos.titulo,
     contenido: datos.contenido,
     foto_paths: datos.fotoPaths,
+  })
+
+  if (error) throw error
+}
+
+export async function listarComentariosBitacora(
+  proyectoId: string,
+): Promise<ComentarioBitacora[]> {
+  const { data, error } = await supabase.rpc('listar_comentarios_bitacora', {
+    p_proyecto_id: proyectoId,
+  })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearComentarioBitacora(
+  entradaId: string,
+  comentario: string,
+): Promise<void> {
+  const { error } = await supabase.from('bitacora_comentarios').insert({
+    entrada_id: entradaId,
+    comentario,
   })
 
   if (error) throw error

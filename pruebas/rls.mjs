@@ -171,6 +171,10 @@ try {
   ok('0025 bitácora')
   await ejecutar('0025_bitacora.sql')
   ok('0025 bitácora repetible')
+  await ejecutar('0026_bitacora_comentarios.sql')
+  ok('0026 seguimiento de bitácora')
+  await ejecutar('0026_bitacora_comentarios.sql')
+  ok('0026 seguimiento de bitácora repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values
@@ -828,10 +832,32 @@ try {
   if (bitacoraResidente.rows[0].n === 1) ok('residente escribe bitácora')
   else fallo('residente escribe bitácora', `vio ${bitacoraResidente.rows[0].n}`)
 
+  await db.exec(`
+    insert into public.bitacora_comentarios (entrada_id, comentario)
+    select id, 'Seguimiento del residente' from public.bitacora limit 1
+  `)
+  const sinEditarEntrada = await db.query(
+    "update public.bitacora set titulo = 'Cambio' returning id",
+  )
+  const sinEditarComentario = await db.query(
+    "update public.bitacora_comentarios set comentario = 'Cambio' returning id",
+  )
+  if (sinEditarEntrada.rows.length === 0 && sinEditarComentario.rows.length === 0) {
+    ok('bitácora y seguimiento inmutables')
+  } else {
+    fallo('bitácora y seguimiento inmutables', 'actualizó una fila')
+  }
+
   await como(MED)
   const bitacoraOficina = await db.query('select count(*)::int as n from public.bitacora')
   if (bitacoraOficina.rows[0].n === 1) ok('oficina consulta bitácora')
   else fallo('oficina consulta bitácora', `vio ${bitacoraOficina.rows[0].n}`)
+
+  const comentariosOficina = await db.query(
+    "select * from public.listar_comentarios_bitacora('" + P1 + "')",
+  )
+  if (comentariosOficina.rows.length === 1) ok('oficina consulta seguimiento')
+  else fallo('oficina consulta seguimiento', `vio ${comentariosOficina.rows.length}`)
 
   await como(ADMIN)
   await esperarError(

@@ -261,6 +261,16 @@ export type BitacoraEntrada = {
   actualizado_en: string
 }
 
+export type ComentarioBitacora = {
+  id: string
+  entrada_id: string
+  comentario: string
+  autor_id: string
+  autor_nombre: string | null
+  autor_email: string
+  creado_en: string
+}
+
 export type BajaMaterial = {
   id: string
   material_id: string
@@ -742,6 +752,17 @@ export type Database = {
         }
         Relationships: []
       }
+      bitacora_comentarios: {
+        Row: Omit<ComentarioBitacora, 'autor_nombre' | 'autor_email'>
+        Insert: {
+          id?: string
+          entrada_id: string
+          comentario: string
+          autor_id?: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
       rol_permisos: {
         Row: RolPermiso
         Insert: {
@@ -836,6 +857,10 @@ export type Database = {
           p_respuesta: string
         }
         Returns: undefined
+      }
+      listar_comentarios_bitacora: {
+        Args: { p_proyecto_id: string }
+        Returns: ComentarioBitacora[]
       }
       rol_actual: {
         Args: Record<PropertyKey, never>

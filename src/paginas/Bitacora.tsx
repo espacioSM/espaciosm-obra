@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSesion } from '../sesion/SesionProvider'
 import { useDatos } from '../lib/useDatos'
-import { crearEntradaBitacora, listarBitacora, listarProyectos } from '../datos/consultas'
+import {
+  crearComentarioBitacora,
+  crearEntradaBitacora,
+  listarBitacora,
+  listarComentariosBitacora,
+  listarProyectos,
+} from '../datos/consultas'
+import type { ComentarioBitacora } from '../lib/tipos'
 import { formatearFecha, hoyISO } from '../lib/formato'
 import { mensajeDeError } from '../lib/errores'
 import { subirEvidencia } from '../lib/evidencias'
@@ -26,6 +33,25 @@ export function Bitacora() {
     [proyectoId],
   )
   const entradas = consulta.datos ?? []
+  const comentariosConsulta = useDatos(
+    () =>
+      proyectoId === ''
+        ? Promise.resolve([])
+        : listarComentariosBitacora(proyectoId),
+    [proyectoId],
+  )
+  const comentarios = comentariosConsulta.datos ?? []
+  const comentariosPorEntrada = new Map<string, ComentarioBitacora[]>()
+  for (const comentario of comentarios) {
+    const lista = comentariosPorEntrada.get(comentario.entrada_id) ?? []
+    lista.push(comentario)
+    comentariosPorEntrada.set(comentario.entrada_id, lista)
+  }
+  const [entradaId, setEntradaId] = useState('')
+  const [comentario, setComentario] = useState('')
+  const [guardandoComentario, setGuardandoComentario] = useState(false)
+  const entradaSeleccionada =
+    entradas.find((entrada) => entrada.id === entradaId) ?? null
   const puedeVer = permisos.bitacora?.ver === true
   const puedeCrear = permisos.bitacora?.crear === true
 
@@ -98,6 +124,30 @@ export function Bitacora() {
       setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
     } finally {
       setGuardando(false)
+    }
+  }
+
+  async function agregarComentario(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+    if (!entradaSeleccionada) return
+
+    if (comentario.trim() === '') {
+      setAviso({ tipo: 'error', texto: 'Escribe el seguimiento.' })
+      return
+    }
+
+    setGuardandoComentario(true)
+    setAviso(null)
+
+    try {
+      await crearComentarioBitacora(entradaSeleccionada.id, comentario.trim())
+      setComentario('')
+      comentariosConsulta.recargar()
+      setAviso({ tipo: 'exito', texto: 'Seguimiento agregado.' })
+    } catch (fallo) {
+      setAviso({ tipo: 'error', texto: mensajeDeError(fallo) })
+    } finally {
+      setGuardandoComentario(false)
     }
   }
 
@@ -318,6 +368,7 @@ export function Bitacora() {
                       <th scope="col">Título</th>
                       <th scope="col">Contenido</th>
                       <th scope="col">Fotos</th>
+                      <th scope="col">Seguimiento</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -335,6 +386,19 @@ export function Bitacora() {
                             ))}
                           </div>
                         </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="boton"
+                            onClick={() => {
+                              setEntradaId(entrada.id)
+                              setComentario('')
+                            }}
+                          >
+                            {comentariosPorEntrada.get(entrada.id)?.length ?? 0}{' '}
+                            comentario(s)
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -342,6 +406,88 @@ export function Bitacora() {
               </div>
             </section>
           )}
+
+          {entradaSeleccionada ? (
+            <section className="tarjeta">
+              <div className="seccion__cabecera">
+                <div>
+                  <h2 className="seccion__titulo">{entradaSeleccionada.titulo}</h2>
+                  <p className="seccion__nota">
+                    {formatearFecha(entradaSeleccionada.fecha)} · Entrada guardada e
+                    inmutable
+                  </p>
+                </div>
+              </div>
+
+              <p>{entradaSeleccionada.contenido}</p>
+
+              {entradaSeleccionada.foto_paths.length > 0 ? (
+                <div className="fotos-tabla">
+                  {entradaSeleccionada.foto_paths.map((ruta) => (
+                    <FotoEvidencia key={ruta} ruta={ruta} />
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="seccion__cabecera">
+                <div>
+                  <h3 className="seccion__titulo">Seguimiento</h3>
+                  <p className="seccion__nota">
+                    Comentarios posteriores, con autor y fecha. No se pueden editar.
+                  </p>
+                </div>
+              </div>
+
+              {(comentariosPorEntrada.get(entradaSeleccionada.id) ?? []).length === 0 ? (
+                <p className="seccion__nota">Todavía no hay seguimiento.</p>
+              ) : (
+                <ul className="lista-simple">
+                  {(comentariosPorEntrada.get(entradaSeleccionada.id) ?? []).map(
+                    (item) => (
+                      <li key={item.id}>
+                        <span>
+                          <span className="celda-principal">{item.comentario}</span>
+                          <span className="celda-nota">
+                            {item.autor_nombre ?? item.autor_email} ·{' '}
+                            {formatearFecha(item.creado_en.slice(0, 10))}
+                          </span>
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+
+              <form
+                className="formulario"
+                onSubmit={(evento) => void agregarComentario(evento)}
+              >
+                <div className="campo campo--ancho">
+                  <label className="campo__etiqueta" htmlFor="bitacora-comentario">
+                    Agregar seguimiento
+                  </label>
+                  <textarea
+                    id="bitacora-comentario"
+                    className="campo__control"
+                    rows={3}
+                    value={comentario}
+                    onChange={(evento) => setComentario(evento.target.value)}
+                    placeholder="Respuesta, aclaración o acuerdo posterior"
+                  />
+                </div>
+
+                <div className="acciones campo--ancho">
+                  <button
+                    type="submit"
+                    className="boton boton--primario"
+                    disabled={guardandoComentario}
+                  >
+                    {guardandoComentario ? 'Guardando…' : 'Agregar seguimiento'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
         </>
       )}
     </div>
