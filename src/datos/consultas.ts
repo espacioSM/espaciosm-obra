@@ -666,6 +666,7 @@ export type DatosGenerador = {
   cantidad: number
   precioUnitario: number
   rendimiento: number
+  cuadrillas: number
 }
 
 export type DatosAvanceGenerador = {
@@ -725,6 +726,7 @@ export async function crearGenerador(datos: DatosGenerador): Promise<Generador> 
           cantidad: datos.cantidad,
           precio_unitario: datos.precioUnitario,
           rendimiento: datos.rendimiento,
+          cuadrillas: datos.cuadrillas,
           activo: true,
         })
         .eq('id', existente.id)
@@ -752,6 +754,7 @@ export async function crearGenerador(datos: DatosGenerador): Promise<Generador> 
       cantidad: datos.cantidad,
       precio_unitario: datos.precioUnitario,
       rendimiento: datos.rendimiento,
+      cuadrillas: datos.cuadrillas,
     })
     .select('*')
     .single()
@@ -773,6 +776,7 @@ export async function actualizarGenerador(
       cantidad: datos.cantidad,
       precio_unitario: datos.precioUnitario,
       rendimiento: datos.rendimiento,
+      cuadrillas: datos.cuadrillas,
     })
     .eq('id', id)
 
@@ -1178,6 +1182,7 @@ export type DatosActividadPrograma = {
   cantidad: number
   unidad: string
   rendimiento: number
+  cuadrillas: number
   fechaInicio: string
   fechaFin: string
   dependeDeId: string | null
@@ -1208,6 +1213,7 @@ export async function crearActividadPrograma(
     cantidad: datos.cantidad,
     unidad: datos.unidad,
     rendimiento: datos.rendimiento,
+    cuadrillas: datos.cuadrillas,
     fecha_inicio: datos.fechaInicio,
     fecha_fin: datos.fechaFin,
     depende_de_id: datos.dependeDeId,
@@ -1229,6 +1235,7 @@ export async function actualizarActividadPrograma(
       cantidad: datos.cantidad,
       unidad: datos.unidad,
       rendimiento: datos.rendimiento,
+      cuadrillas: datos.cuadrillas,
       fecha_inicio: datos.fechaInicio,
       fecha_fin: datos.fechaFin,
       depende_de_id: datos.dependeDeId,

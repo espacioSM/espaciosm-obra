@@ -110,6 +110,7 @@ export function Programa() {
   const [cantidad, setCantidad] = useState('')
   const [unidad, setUnidad] = useState('m2')
   const [rendimiento, setRendimiento] = useState('')
+  const [cuadrillas, setCuadrillas] = useState('1')
   const [fechaInicio, setFechaInicio] = useState(hoyISO())
   const [dependeDeId, setDependeDeId] = useState('')
   const autoDependencia = useRef(true)
@@ -133,6 +134,7 @@ export function Programa() {
     setCantidad('')
     setUnidad('m2')
     setRendimiento('')
+    setCuadrillas('1')
     setFechaInicio(hoyISO())
     setDependeDeId('')
     autoDependencia.current = true
@@ -148,6 +150,7 @@ export function Programa() {
     if (Number(generador.rendimiento) > 0) {
       setRendimiento(String(generador.rendimiento))
     }
+    setCuadrillas(String(generador.cuadrillas ?? 1))
   }
 
   function editar(actividad: ProgramaActividad) {
@@ -157,6 +160,7 @@ export function Programa() {
     setCantidad(String(actividad.cantidad))
     setUnidad(actividad.unidad)
     setRendimiento(String(actividad.rendimiento))
+    setCuadrillas(String(actividad.cuadrillas))
     setFechaInicio(actividad.fecha_inicio)
     setDependeDeId(actividad.depende_de_id ?? '')
   }
@@ -165,6 +169,7 @@ export function Programa() {
     inicio: string,
     cantidadNumero: number,
     rendimientoNumero: number,
+    cuadrillasNumero: number,
     predecesor: ProgramaActividad | undefined,
   ): { inicio: string; fin: string } {
     let fecha = fechaLocal(inicio)
@@ -175,7 +180,10 @@ export function Programa() {
         fecha = siguienteDiaHabil(fecha)
       }
     }
-    const dias = Math.max(1, Math.ceil(cantidadNumero / rendimientoNumero))
+    const dias = Math.max(
+      1,
+      Math.ceil(cantidadNumero / (rendimientoNumero * cuadrillasNumero)),
+    )
     return {
       inicio: isoLocal(fecha),
       fin: isoLocal(sumarDiasHabiles(fecha, dias)),
@@ -200,11 +208,18 @@ export function Programa() {
       return
     }
 
+    const cuadrillasNumero = Number(cuadrillas)
+    if (!Number.isFinite(cuadrillasNumero) || cuadrillasNumero <= 0) {
+      setAviso({ tipo: 'error', texto: 'Las cuadrillas deben ser mayores que cero.' })
+      return
+    }
+
     const predecesor = actividades.find((item) => item.id === dependeDeId)
     const fechas = calcularFechas(
       fechaInicio,
       cantidadNumero,
       rendimientoNumero,
+      cuadrillasNumero,
       predecesor,
     )
 
@@ -218,6 +233,7 @@ export function Programa() {
         cantidad: Math.round(cantidadNumero * 100) / 100,
         unidad: unidad.trim() === '' ? 'pieza' : unidad.trim(),
         rendimiento: Math.round(rendimientoNumero * 100) / 100,
+        cuadrillas: Math.round(cuadrillasNumero * 100) / 100,
         fechaInicio: fechas.inicio,
         fechaFin: fechas.fin,
         dependeDeId: dependeDeId === '' ? null : dependeDeId,
@@ -278,6 +294,7 @@ export function Programa() {
           predecesor ? predecesor.fin : actividad.fecha_inicio,
           Number(actividad.cantidad),
           Number(actividad.rendimiento),
+          Number(actividad.cuadrillas),
           predecesor
             ? ({
                 ...actividad,
@@ -310,6 +327,7 @@ export function Programa() {
           cantidad: actividad.cantidad,
           unidad: actividad.unidad,
           rendimiento: actividad.rendimiento,
+          cuadrillas: actividad.cuadrillas,
           fechaInicio: calculada.inicio,
           fechaFin: calculada.fin,
           dependeDeId: actividad.depende_de_id,
@@ -346,17 +364,29 @@ export function Programa() {
   const rango = Math.max(1, maximo - minimo)
   const cantidadVista = Number(cantidad)
   const rendimientoVista = Number(rendimiento)
+  const cuadrillasVista = Number(cuadrillas)
   const diasVista =
     Number.isFinite(cantidadVista) &&
     cantidadVista > 0 &&
     Number.isFinite(rendimientoVista) &&
-    rendimientoVista > 0
-      ? Math.max(1, Math.ceil(cantidadVista / rendimientoVista))
+    rendimientoVista > 0 &&
+    Number.isFinite(cuadrillasVista) &&
+    cuadrillasVista > 0
+      ? Math.max(
+          1,
+          Math.ceil(cantidadVista / (rendimientoVista * cuadrillasVista)),
+        )
       : 0
   const predecesorForm = actividades.find((actividad) => actividad.id === dependeDeId)
   const fechasForm =
     diasVista > 0
-      ? calcularFechas(fechaInicio, cantidadVista, rendimientoVista, predecesorForm)
+      ? calcularFechas(
+          fechaInicio,
+          cantidadVista,
+          rendimientoVista,
+          Number(cuadrillas),
+          predecesorForm,
+        )
       : null
 
   return (
@@ -519,6 +549,23 @@ export function Programa() {
                     </div>
 
                     <div className="campo">
+                      <label className="campo__etiqueta" htmlFor="programa-cuadrillas">
+                        Cuadrillas asignadas
+                      </label>
+                      <input
+                        id="programa-cuadrillas"
+                        className="campo__control"
+                        inputMode="decimal"
+                        value={cuadrillas}
+                        onChange={(evento) => setCuadrillas(evento.target.value)}
+                        placeholder="1"
+                      />
+                      <span className="campo__ayuda">
+                        Más cuadrillas reducen la duración.
+                      </span>
+                    </div>
+
+                    <div className="campo">
                       <label className="campo__etiqueta" htmlFor="programa-inicio">
                         Fecha de inicio
                       </label>
@@ -560,7 +607,8 @@ export function Programa() {
                           <>
                             Duración estimada: {diasVista} día(s) hábiles (
                             {cantidadVista.toFixed(2)} {unidad.trim() || 'unidad'} ÷{' '}
-                            {rendimientoVista.toFixed(2)} por día).
+                            {rendimientoVista.toFixed(2)} por día ×{' '}
+                            {cuadrillasVista.toFixed(2)} cuadrilla(s)).
                             <br />
                             Inicio: {formatearFecha(fechasForm.inicio)} · Fin:{' '}
                             {formatearFecha(fechasForm.fin)}
@@ -687,6 +735,7 @@ export function Programa() {
                                 {actividad.unidad} ·{' '}
                                 {Number(actividad.rendimiento).toFixed(2)}{' '}
                                 {actividad.unidad}/día ·{' '}
+                                {Number(actividad.cuadrillas).toFixed(2)} cuadrilla(s) ·{' '}
                                 {diasEntre(actividad.fecha_inicio, actividad.fecha_fin)}{' '}
                                 día(s)
                               </span>

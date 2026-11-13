@@ -151,6 +151,7 @@ export type Generador = {
   cantidad: number
   precio_unitario: number
   rendimiento: number
+  cuadrillas: number
   activo: boolean
   creado_por: string | null
   creado_en: string
@@ -165,6 +166,7 @@ export type ProgramaActividad = {
   cantidad: number
   unidad: string
   rendimiento: number
+  cuadrillas: number
   fecha_inicio: string
   fecha_fin: string
   depende_de_id: string | null
@@ -608,6 +610,7 @@ export type Database = {
           cantidad?: number
           unidad?: string
           rendimiento: number
+          cuadrillas?: number
           fecha_inicio: string
           fecha_fin: string
           depende_de_id?: string | null
@@ -620,6 +623,7 @@ export type Database = {
           cantidad?: number
           unidad?: string
           rendimiento?: number
+          cuadrillas?: number
           fecha_inicio?: string
           fecha_fin?: string
           depende_de_id?: string | null
@@ -638,6 +642,7 @@ export type Database = {
           cantidad: number
           precio_unitario?: number
           rendimiento?: number
+          cuadrillas?: number
           activo?: boolean
           creado_por?: string | null
         }
@@ -648,6 +653,7 @@ export type Database = {
           cantidad?: number
           precio_unitario?: number
           rendimiento?: number
+          cuadrillas?: number
           activo?: boolean
         }
         Relationships: []

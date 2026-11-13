@@ -211,6 +211,10 @@ try {
   ok('0035 programa de obra')
   await ejecutar('0035_programa_obra.sql')
   ok('0035 programa de obra repetible')
+  await ejecutar('0036_cuadrillas_rendimiento.sql')
+  ok('0036 cuadrillas de rendimiento')
+  await ejecutar('0036_cuadrillas_rendimiento.sql')
+  ok('0036 cuadrillas de rendimiento repetible')
 
   await db.exec(`
     insert into auth.users (id, email, raw_user_meta_data) values

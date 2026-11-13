@@ -65,6 +65,7 @@ export function Generadores() {
   const [cantidad, setCantidad] = useState('')
   const [precio, setPrecio] = useState('')
   const [rendimiento, setRendimiento] = useState('')
+  const [cuadrillas, setCuadrillas] = useState('1')
   const [generadorEditandoId, setGeneradorEditandoId] = useState('')
 
   const [generadorId, setGeneradorId] = useState('')
@@ -172,6 +173,12 @@ export function Generadores() {
       return
     }
 
+    const cuadrillasNumero = Number(cuadrillas)
+    if (!Number.isFinite(cuadrillasNumero) || cuadrillasNumero <= 0) {
+      setAviso({ tipo: 'error', texto: 'Las cuadrillas deben ser mayores que cero.' })
+      return
+    }
+
     setGuardandoGenerador(true)
     setAviso(null)
 
@@ -182,6 +189,7 @@ export function Generadores() {
       cantidad: Math.round(cantidadNumero * 100) / 100,
       precioUnitario: Math.round(precioNumero * 100) / 100,
       rendimiento: Math.round(rendimientoNumero * 100) / 100,
+      cuadrillas: Math.round(cuadrillasNumero * 100) / 100,
     }
 
     try {
@@ -198,6 +206,7 @@ export function Generadores() {
       setCantidad('')
       setPrecio('')
       setRendimiento('')
+      setCuadrillas('1')
       setGeneradorEditandoId('')
       consulta.recargar()
     } catch (fallo) {
@@ -215,6 +224,7 @@ export function Generadores() {
     setCantidad(String(generador.cantidad))
     setPrecio(String(generador.precio_unitario))
     setRendimiento(String(generador.rendimiento))
+    setCuadrillas(String(generador.cuadrillas))
     setAviso(null)
   }
 
@@ -225,6 +235,7 @@ export function Generadores() {
     setCantidad('')
     setPrecio('')
     setRendimiento('')
+    setCuadrillas('1')
   }
 
   async function eliminarGenerador(generador: Generador) {
@@ -620,6 +631,23 @@ export function Generadores() {
                         <span className="campo__ayuda">
                           Cuántas {unidad.trim() || 'unidades'} se ejecutan en un día. No
                           escribas días.
+                        </span>
+                      </div>
+
+                      <div className="campo">
+                        <label className="campo__etiqueta" htmlFor="gen-cuadrillas">
+                          Cuadrillas asignadas
+                        </label>
+                        <input
+                          id="gen-cuadrillas"
+                          className="campo__control"
+                          inputMode="decimal"
+                          value={cuadrillas}
+                          onChange={(evento) => setCuadrillas(evento.target.value)}
+                          placeholder="1"
+                        />
+                        <span className="campo__ayuda">
+                          La duración se divide entre las cuadrillas.
                         </span>
                       </div>
 
@@ -1065,7 +1093,7 @@ export function Generadores() {
                             <td>{formatearMoneda(Number(generador.precio_unitario))}</td>
                             <td>
                               {Number(generador.rendimiento) > 0
-                                ? `${Number(generador.rendimiento).toFixed(2)} ${generador.unidad}/día`
+                                ? `${Number(generador.rendimiento).toFixed(2)} ${generador.unidad}/día · ${Number(generador.cuadrillas).toFixed(2)} cuadrilla(s)`
                                 : '—'}
                             </td>
                             <td>{formatearMoneda(importe)}</td>
