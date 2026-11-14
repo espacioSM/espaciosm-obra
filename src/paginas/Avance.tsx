@@ -417,6 +417,16 @@ export function Avance() {
                         points={linea(puntosReal)}
                         className="avance-grafica__real"
                       />
+                      {muestras.includes(hoy) ? (
+                        <circle
+                          cx={x(muestras.indexOf(hoy))}
+                          cy={y(avanceRealGlobal)}
+                          r={4}
+                          className="avance-grafica__punto-real"
+                        >
+                          <title>{`Avance real de hoy: ${avanceRealGlobal.toFixed(1)}%`}</title>
+                        </circle>
+                      ) : null}
                       <text
                         x={margen.izquierda}
                         y={alto - 6}

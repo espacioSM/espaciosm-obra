@@ -1612,6 +1612,12 @@ a {
   stroke-width: 2.5;
 }
 
+.avance-grafica__punto-real {
+  fill: #79d6a3;
+  stroke: #10100e;
+  stroke-width: 2;
+}
+
 .avance-leyenda {
   display: flex;
   gap: 18px;
