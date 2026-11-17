@@ -31,6 +31,7 @@ export const NAVEGACION: GrupoNavegacion[] = [
       { ruta: '/generadores', etiqueta: 'Generadores', modulo: 'generadores' },
       { ruta: '/programa', etiqueta: 'Programa', modulo: 'generadores' },
       { ruta: '/avance', etiqueta: 'Avance', modulo: 'generadores' },
+      { ruta: '/ruta-critica', etiqueta: 'Ruta crítica', modulo: 'generadores' },
       { ruta: '/estimaciones', etiqueta: 'Estimaciones', modulo: 'estimaciones' },
       {
         ruta: '/solicitudes',

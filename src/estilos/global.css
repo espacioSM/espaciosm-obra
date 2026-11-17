@@ -1577,6 +1577,59 @@ a {
   object-fit: cover;
 }
 
+.gantt-cpm {
+  overflow-x: auto;
+  background: #10100e;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 10px;
+}
+
+.gantt-cpm svg {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+}
+
+.gantt-cpm__malla {
+  stroke: #2a2a26;
+  stroke-width: 1;
+}
+
+.gantt-cpm__fecha {
+  fill: #989285;
+  font-size: 10px;
+}
+
+.gantt-cpm__nombre {
+  fill: var(--tinta);
+  font-size: 11px;
+}
+
+.gantt-cpm__fondo {
+  fill: #1b1b18;
+}
+
+.gantt-cpm__barra {
+  fill: #59574f;
+}
+
+.gantt-cpm__barra--critica {
+  fill: #f5cf16;
+}
+
+.gantt-cpm__flecha {
+  fill: none;
+  stroke: #79d6a3;
+  stroke-width: 1.5;
+}
+
+.gantt-cpm__separador {
+  stroke: #242420;
+  stroke-width: 1;
+}
+
 .avance-grafica {
   background: #10100e;
   border: 1px solid var(--borde);

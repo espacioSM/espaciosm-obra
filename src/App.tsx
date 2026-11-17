@@ -19,6 +19,7 @@ import { Reportes } from './paginas/Reportes'
 import { Presupuesto } from './paginas/Presupuesto'
 import { Programa } from './paginas/Programa'
 import { Avance } from './paginas/Avance'
+import { RutaCritica } from './paginas/RutaCritica'
 import { Usuarios } from './paginas/Usuarios'
 import { Cuenta } from './paginas/Cuenta'
 import { Pendiente } from './paginas/Pendiente'
@@ -44,6 +45,7 @@ export default function App() {
               <Route path="generadores" element={<Generadores />} />
               <Route path="programa" element={<Programa />} />
               <Route path="avance" element={<Avance />} />
+              <Route path="ruta-critica" element={<RutaCritica />} />
               <Route path="estimaciones" element={<Estimaciones />} />
               <Route path="solicitudes" element={<Solicitudes />} />
               <Route path="pagos" element={<Pagos />} />
